@@ -66,6 +66,17 @@ class CalorieCache(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
 
 
+class HealthInsightsCache(Base):
+    """Cache for health insights to avoid repeated Claude calls."""
+    __tablename__ = "health_insights_cache"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), unique=True, index=True)
+    health_insights_json = Column(Text)  # JSON string of HealthInsightsResponse
+    last_order_count = Column(Integer)  # Order count when generated
+    generated_at = Column(DateTime, default=datetime.utcnow)
+
+
 # Pydantic Models (API Request/Response)
 
 class UserCreate(BaseModel):
@@ -135,9 +146,41 @@ class TokenResponse(BaseModel):
 
 
 class SummaryResponse(BaseModel):
-    """Summary stats for the last 2 months."""
+    """Summary stats for the last 6 months."""
     avg_monthly_spend: float
     avg_monthly_calories: float
     avg_days_ordered: float
+    avg_order_count: float
     total_months_analyzed: int
-    months_data: list[dict]  # Individual month breakdowns
+    months_data: list[dict]  # Individual month breakdowns (includes short_month for charts)
+    top_dish: Optional[str] = None  # Most frequently ordered dish
+    top_dish_count: int = 0  # Number of times ordered
+
+
+# Health Intelligence Models
+
+class EatMoreOfItem(BaseModel):
+    """Item in the 'eat more of' list with health indicator."""
+    item: str
+    is_healthy: bool
+
+
+class HealthInsightsResponse(BaseModel):
+    """Health intelligence insights."""
+    health_index: int  # 0-100
+    one_liner: str
+    eat_more_of: list[EatMoreOfItem]
+    lacking: list[str]
+    monthly_narrative: str
+
+
+class DailyHealthScore(BaseModel):
+    """Health score for a single day."""
+    date: str
+    health_index: int
+
+
+class ExtendedSummaryResponse(SummaryResponse):
+    """Extended summary with health intelligence."""
+    health_insights: Optional[HealthInsightsResponse] = None
+    daily_health_scores: Optional[list[DailyHealthScore]] = None

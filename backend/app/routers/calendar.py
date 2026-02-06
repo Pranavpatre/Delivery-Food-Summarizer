@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -6,8 +7,13 @@ from dateutil.relativedelta import relativedelta
 from collections import defaultdict
 
 from ..database import get_db
-from ..models import User, Order, OrderResponse, DishResponse, CalendarDayData, CalendarMonthResponse, SummaryResponse
+from ..models import (
+    User, Order, Dish, OrderResponse, DishResponse, CalendarDayData,
+    CalendarMonthResponse, SummaryResponse, ExtendedSummaryResponse,
+    HealthInsightsResponse, EatMoreOfItem, DailyHealthScore, HealthInsightsCache
+)
 from ..routers.auth import get_current_user
+from ..services.health_intelligence import HealthIntelligenceService
 
 router = APIRouter()
 
@@ -150,17 +156,21 @@ async def get_orders(
     }
 
 
-@router.get("/summary", response_model=SummaryResponse)
+@router.get("/summary", response_model=ExtendedSummaryResponse)
 async def get_summary(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get summary stats for the previous 2 months."""
+    """Get summary stats with health intelligence for the previous 6 months."""
     now = datetime.now()
     months_data = []
+    dish_counts = defaultdict(int)  # Track dish frequency
+    dish_calories = {}  # Track calories per dish
+    all_orders = []  # Collect all orders for health analysis
+    daily_orders = defaultdict(list)  # Track orders by date for daily health scores
 
-    # Calculate stats for each of the previous 2 months
-    for i in range(1, 3):  # 1 month ago and 2 months ago
+    # Calculate stats for each of the previous 6 months
+    for i in range(1, 7):  # 1 month ago to 6 months ago
         target_date = now - relativedelta(months=i)
         year = target_date.year
         month = target_date.month
@@ -179,16 +189,34 @@ async def get_summary(
             Order.order_date < end_date
         ).all()
 
-        # Calculate totals
+        all_orders.extend(orders)
+
+        # Calculate totals and track dishes
         monthly_calories = sum(o.total_calories or 0 for o in orders)
         monthly_price = sum(o.total_price or 0 for o in orders)
+
+        # Count dish frequencies and collect for health analysis
+        for order in orders:
+            date_str = order.order_date.strftime("%Y-%m-%d")
+            daily_orders[date_str].append({
+                "calories": order.total_calories or 0,
+                "dishes": [d.name for d in order.dishes]
+            })
+
+            for dish in order.dishes:
+                dish_name = dish.name.strip().lower()
+                dish_counts[dish_name] += dish.quantity
+                if dish_name not in dish_calories and dish.calories:
+                    dish_calories[dish_name] = dish.calories
 
         # Count unique days with orders
         days_ordered = len(set(o.order_date.day for o in orders))
 
         month_name = target_date.strftime("%B %Y")
+        short_month = target_date.strftime("%b")
         months_data.append({
             "month": month_name,
+            "short_month": short_month,
             "year": year,
             "month_num": month,
             "total_calories": monthly_calories,
@@ -204,11 +232,133 @@ async def get_summary(
     avg_monthly_spend = sum(m["total_price"] for m in months_data) / num_months if months_with_data else 0
     avg_monthly_calories = sum(m["total_calories"] for m in months_data) / num_months if months_with_data else 0
     avg_days_ordered = sum(m["days_ordered"] for m in months_data) / num_months if months_with_data else 0
+    avg_order_count = sum(m["order_count"] for m in months_data) / num_months if months_with_data else 0
 
-    return SummaryResponse(
+    # Find top dish
+    top_dish = None
+    top_dish_count = 0
+    top_dishes = []
+    if dish_counts:
+        sorted_dishes = sorted(dish_counts.items(), key=lambda x: x[1], reverse=True)
+        top_dish_name = sorted_dishes[0][0]
+        top_dish_count = sorted_dishes[0][1]
+        top_dish = top_dish_name.title()
+        top_dishes = [name.title() for name, _ in sorted_dishes[:5]]
+
+    # Calculate total orders for cache check
+    total_order_count = len(all_orders)
+
+    # Health Intelligence
+    health_insights = None
+    daily_health_scores = None
+
+    if total_order_count > 0:
+        # Check cache first
+        cached = db.query(HealthInsightsCache).filter(
+            HealthInsightsCache.user_id == current_user.id
+        ).first()
+
+        if cached and cached.last_order_count == total_order_count:
+            # Use cached insights
+            try:
+                cached_data = json.loads(cached.health_insights_json)
+                health_insights = HealthInsightsResponse(
+                    health_index=cached_data["health_index"],
+                    one_liner=cached_data["one_liner"],
+                    eat_more_of=[EatMoreOfItem(**item) for item in cached_data["eat_more_of"]],
+                    lacking=cached_data["lacking"],
+                    monthly_narrative=cached_data["monthly_narrative"]
+                )
+                # Recalculate daily scores (they're cheap)
+                health_service = HealthIntelligenceService(db)
+                daily_scores = health_service.calculate_daily_health_scores(
+                    dict(daily_orders),
+                    health_insights.health_index
+                )
+                daily_health_scores = [DailyHealthScore(**s) for s in daily_scores]
+            except Exception as e:
+                print(f"Cache parse error: {e}")
+                cached = None
+
+        if not cached or cached.last_order_count != total_order_count:
+            # Generate new insights
+            health_service = HealthIntelligenceService(db)
+
+            # Prepare dish data for analysis
+            dishes_with_frequency = [
+                {
+                    "name": name.title(),
+                    "count": count,
+                    "calories": dish_calories.get(name, 0)
+                }
+                for name, count in dish_counts.items()
+            ]
+
+            # Calculate average daily calories on order days
+            total_days = len(daily_orders)
+            total_cal = sum(
+                sum(o["calories"] for o in orders)
+                for orders in daily_orders.values()
+            )
+            avg_daily_calories = total_cal / total_days if total_days > 0 else 0
+
+            # Generate insights
+            insights = await health_service.generate_health_insights(
+                dishes_with_frequency=dishes_with_frequency,
+                total_orders=total_order_count,
+                total_months=num_months,
+                avg_daily_calories=avg_daily_calories,
+                top_dishes=top_dishes
+            )
+
+            if insights:
+                health_insights = HealthInsightsResponse(
+                    health_index=insights.health_index,
+                    one_liner=insights.one_liner,
+                    eat_more_of=[EatMoreOfItem(**item) if isinstance(item, dict) else EatMoreOfItem(item=str(item), is_healthy=False) for item in insights.eat_more_of],
+                    lacking=insights.lacking,
+                    monthly_narrative=insights.monthly_narrative
+                )
+
+                # Calculate daily health scores
+                daily_scores = health_service.calculate_daily_health_scores(
+                    dict(daily_orders),
+                    insights.health_index
+                )
+                daily_health_scores = [DailyHealthScore(**s) for s in daily_scores]
+
+                # Save to cache
+                cache_data = {
+                    "health_index": insights.health_index,
+                    "one_liner": insights.one_liner,
+                    "eat_more_of": [{"item": item.item if hasattr(item, 'item') else item.get("item", ""), "is_healthy": item.is_healthy if hasattr(item, 'is_healthy') else item.get("is_healthy", False)} for item in insights.eat_more_of],
+                    "lacking": insights.lacking,
+                    "monthly_narrative": insights.monthly_narrative
+                }
+
+                if cached:
+                    cached.health_insights_json = json.dumps(cache_data)
+                    cached.last_order_count = total_order_count
+                    cached.generated_at = datetime.utcnow()
+                else:
+                    new_cache = HealthInsightsCache(
+                        user_id=current_user.id,
+                        health_insights_json=json.dumps(cache_data),
+                        last_order_count=total_order_count
+                    )
+                    db.add(new_cache)
+
+                db.commit()
+
+    return ExtendedSummaryResponse(
         avg_monthly_spend=round(avg_monthly_spend, 2),
         avg_monthly_calories=round(avg_monthly_calories, 2),
         avg_days_ordered=round(avg_days_ordered, 1),
+        avg_order_count=round(avg_order_count, 1),
         total_months_analyzed=len(months_data),
-        months_data=months_data
+        months_data=months_data,
+        top_dish=top_dish,
+        top_dish_count=top_dish_count,
+        health_insights=health_insights,
+        daily_health_scores=daily_health_scores
     )

@@ -1,5 +1,7 @@
 from pydantic_settings import BaseSettings
 from functools import lru_cache
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 
 class Settings(BaseSettings):
@@ -25,7 +27,13 @@ class Settings(BaseSettings):
 
     # Email filtering
     swiggy_sender: str = "noreply@swiggy.in"
-    date_filter_start: str = "2025-12-01"
+    lookback_months: int = 6  # Number of months to look back for data
+
+    @property
+    def date_filter_start(self) -> str:
+        """Calculate the start date dynamically based on lookback_months."""
+        start_date = datetime.now() - relativedelta(months=self.lookback_months)
+        return start_date.strftime("%Y-%m-%d")
 
     class Config:
         env_file = ".env"

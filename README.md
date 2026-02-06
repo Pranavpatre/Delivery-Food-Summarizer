@@ -1,4 +1,4 @@
-# CalLogs
+# Bitewise
 
 Native iOS app that automatically tracks calories from your Swiggy food orders by scanning your Gmail inbox and displaying the data on a calendar view.
 
@@ -47,7 +47,7 @@ cp .env.example .env
 1. Go to [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a project and enable **Gmail API**
 3. Create **two OAuth Client IDs**:
-   - **iOS**: For the mobile app (enter your Bundle ID: `com.yourname.CalLogs`)
+   - **iOS**: For the mobile app (enter your Bundle ID: `com.yourname.Bitewise`)
    - **Web**: For backend token verification
 4. Note both Client IDs
 
@@ -61,7 +61,7 @@ ANTHROPIC_API_KEY=your_anthropic_key
 SECRET_KEY=generate_with_openssl_rand_hex_32
 ```
 
-**iOS** (`ios/CalLogs/CalLogs/Services/Config.swift`):
+**iOS** (`ios/Bitewise/Bitewise/Services/Config.swift`):
 ```swift
 static let googleClientID = "your_ios_client_id.apps.googleusercontent.com"
 ```
@@ -101,8 +101,8 @@ See [ios/README.md](ios/README.md) for detailed iOS setup instructions including
 │   │       └── calorie_lookup.py
 │   └── requirements.txt
 └── ios/
-    └── CalLogs/
-        └── CalLogs/
+    └── Bitewise/
+        └── Bitewise/
             ├── Views/           # SwiftUI views
             ├── Models/          # Data models
             └── Services/        # Auth & API client

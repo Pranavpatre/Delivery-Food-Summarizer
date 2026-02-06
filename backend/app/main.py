@@ -17,8 +17,8 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="CalLogs",
-    description="Track calories from your food orders automatically",
+    title="Bitewise",
+    description="Track your food orders, the wise way",
     version="1.0.0",
     lifespan=lifespan
 )
@@ -50,7 +50,7 @@ app.include_router(calendar.router, prefix="/api", tags=["Calendar"])
 @app.get("/")
 async def root():
     return {
-        "message": "CalLogs API",
+        "message": "Bitewise API",
         "docs": "/docs",
         "health": "ok"
     }

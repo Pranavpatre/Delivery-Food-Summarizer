@@ -53,6 +53,7 @@ export interface SyncStatus {
 
 export interface MonthData {
   month: string;
+  short_month: string;
   year: number;
   month_num: number;
   total_calories: number;
@@ -65,6 +66,31 @@ export interface SummaryResponse {
   avg_monthly_spend: number;
   avg_monthly_calories: number;
   avg_days_ordered: number;
+  avg_order_count: number;
   total_months_analyzed: number;
   months_data: MonthData[];
+  top_dish: string | null;
+  top_dish_count: number;
+  health_insights: HealthInsights | null;
+  daily_health_scores: DailyHealthScore[] | null;
+}
+
+// Health Intelligence Types
+
+export interface EatMoreOfItem {
+  item: string;
+  is_healthy: boolean;
+}
+
+export interface HealthInsights {
+  health_index: number;  // 0-100
+  one_liner: string;
+  eat_more_of: EatMoreOfItem[];
+  lacking: string[];
+  monthly_narrative: string;
+}
+
+export interface DailyHealthScore {
+  date: string;
+  health_index: number;
 }
