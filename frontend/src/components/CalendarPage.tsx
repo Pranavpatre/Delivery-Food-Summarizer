@@ -147,7 +147,7 @@ function CalendarPage({ onGoToSummary }: CalendarPageProps) {
                 </svg>
               </button>
             )}
-            <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" stroke="white" strokeWidth="5"/><circle cx="50" cy="50" r="35" stroke="white" strokeWidth="3"/><path d="M35 52 L45 62 L65 40" stroke="#84CC16" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <svg width="36" height="28" viewBox="0 0 160 100" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M15 15 L15 45 Q15 55 20 55 L20 85" stroke="white" strokeWidth="4" strokeLinecap="round"/><path d="M25 15 L25 45 Q25 55 20 55" stroke="white" strokeWidth="4" strokeLinecap="round"/><path d="M20 15 L20 40" stroke="white" strokeWidth="3" strokeLinecap="round"/><circle cx="80" cy="50" r="38" stroke="white" strokeWidth="4"/><circle cx="80" cy="50" r="28" stroke="white" strokeWidth="2.5"/><path d="M65 52 L75 62 L95 40" stroke="#84CC16" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round"/><ellipse cx="140" cy="30" rx="10" ry="20" stroke="white" strokeWidth="4"/><path d="M140 50 L140 85" stroke="white" strokeWidth="4" strokeLinecap="round"/></svg>
             <h1 className="font-heading text-xl font-black">Bitewise</h1>
           </div>
           <div className="flex items-center gap-4 text-sm">
