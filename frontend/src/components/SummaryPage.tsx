@@ -483,10 +483,6 @@ function TrendChart({ data, metric }: { data: MonthData[]; metric: ChartMetric }
     return `${v}`;
   };
 
-  const getBarColor = () => {
-    return 'bg-bark';
-  };
-
   const values = data.map(getValue);
   const rawMax = Math.max(...values, 1);
 
