@@ -1,5 +1,5 @@
-import { useState, useEffect, useMemo } from 'react';
-import { calendarApi } from '../api/client';
+import { useState, useEffect, useMemo, useRef } from 'react';
+import { calendarApi, syncApi } from '../api/client';
 import { useAuth } from '../App';
 import type { SummaryResponse, MonthData, HabitItem, NutrientLevel } from '../types';
 
@@ -13,12 +13,20 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
   const { user, logout } = useAuth();
   const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isSyncing, setIsSyncing] = useState(false);
+  const [syncMessage, setSyncMessage] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [activeMetric, setActiveMetric] = useState<ChartMetric>('price');
+  const syncAttempted = useRef(false);
 
   useEffect(() => {
     loadSummary();
   }, []);
+
+  const hasNoData = (data: SummaryResponse | null) => {
+    if (!data?.months_data) return true;
+    return data.months_data.every(m => m.order_count === 0);
+  };
 
   const loadSummary = async () => {
     setIsLoading(true);
@@ -26,6 +34,12 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
     try {
       const data = await calendarApi.getSummary();
       setSummaryData(data);
+
+      // Auto-sync for new users with no data (only once)
+      if (hasNoData(data) && !syncAttempted.current) {
+        syncAttempted.current = true;
+        await autoSync();
+      }
     } catch (err) {
       setError('Failed to load data. Retry?');
       console.error(err);
@@ -34,15 +48,64 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
     }
   };
 
+  const autoSync = async () => {
+    setIsSyncing(true);
+    setSyncMessage('Syncing your Swiggy emails...');
+    try {
+      await syncApi.triggerSync();
+
+      // Poll sync status
+      let attempts = 0;
+      const maxAttempts = 60; // 5 minutes max
+      while (attempts < maxAttempts) {
+        await new Promise(r => setTimeout(r, 5000));
+        attempts++;
+        try {
+          const status = await syncApi.getStatus();
+          if (status.emails_processed > 0) {
+            setSyncMessage(`Processed ${status.emails_processed} emails...`);
+          }
+          if (status.orders_created > 0) {
+            setSyncMessage(`Found ${status.orders_created} orders so far...`);
+          }
+          if (status.status === 'completed' || status.status === 'idle') {
+            setSyncMessage('Sync complete! Loading your summary...');
+            // Reload summary with new data
+            const freshData = await calendarApi.getSummary();
+            setSummaryData(freshData);
+            break;
+          }
+          if (status.status === 'error') {
+            setSyncMessage('Sync encountered an issue. You can retry from the calendar page.');
+            break;
+          }
+        } catch {
+          // Ignore polling errors, keep trying
+        }
+      }
+    } catch (err) {
+      console.error('Auto-sync failed:', err);
+      setSyncMessage('Could not sync automatically. Try syncing from the calendar page.');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   const chartData = useMemo(() => {
     if (!summaryData?.months_data) return [];
     return [...summaryData.months_data].reverse();
   }, [summaryData]);
 
-  if (isLoading) {
+  if (isLoading || isSyncing) {
     return (
-      <div className="min-h-screen bg-linen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-2 border-lime border-t-transparent"></div>
+      <div className="min-h-screen bg-linen flex flex-col items-center justify-center px-6">
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-lime border-t-transparent mb-6"></div>
+        <p className="text-ebony font-heading font-semibold text-lg mb-2">
+          {isSyncing ? 'Setting things up' : 'Loading your summary'}
+        </p>
+        <p className="text-sage text-sm text-center max-w-xs">
+          {isSyncing ? syncMessage : 'Fetching your order insights...'}
+        </p>
       </div>
     );
   }
@@ -185,12 +248,14 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
         )}
 
         {/* No Data */}
-        {(!summaryData?.months_data ||
-          summaryData.months_data.every(m => m.order_count === 0)) && (
+        {hasNoData(summaryData) && (
           <div className="card text-center py-12">
             <p className="text-3xl mb-4">📭</p>
             <p className="text-ebony mb-2">No order data found for the last 6 months</p>
-            <p className="text-sm text-sage">Sync your emails from the calendar page to see your stats</p>
+            <p className="text-sm text-sage mb-4">We couldn't find any Swiggy order emails. Make sure you're signed in with the right Google account.</p>
+            <button onClick={() => { syncAttempted.current = false; loadSummary(); }} className="btn-primary">
+              Try Syncing Again
+            </button>
           </div>
         )}
 
