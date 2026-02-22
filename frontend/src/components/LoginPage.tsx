@@ -28,7 +28,7 @@ function LoginPage() {
             <h1 className="font-heading text-6xl md:text-7xl font-bold text-ebony leading-none tracking-tight uppercase">
               Order Smarter.
             </h1>
-            <p className="font-tagline text-ebony/60 text-base md:text-lg italic leading-relaxed">
+            <p className="font-tagline text-ebony text-base md:text-lg italic leading-relaxed">
               Zero-effort nutrition tracking for your Swiggy food orders
             </p>
           </div>
