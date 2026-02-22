@@ -1,5 +1,6 @@
 import { useState, useEffect, createContext, useContext } from 'react';
 import { Analytics } from '@vercel/analytics/react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { authApi } from './api/client';
 import type { User } from './types';
 import LoginPage from './components/LoginPage';
@@ -113,6 +114,7 @@ function App() {
     <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
       {renderPage()}
       <Analytics />
+      <SpeedInsights />
     </AuthContext.Provider>
   );
 }
