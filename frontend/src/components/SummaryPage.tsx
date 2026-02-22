@@ -69,7 +69,7 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
             setSyncMessage(`Found ${status.orders_created} orders so far...`);
           }
           if (status.status === 'completed' || status.status === 'idle') {
-            setSyncMessage('Sync complete! Loading your summary...');
+            setSyncMessage('Sync complete! Loading Order Health Summary...');
             // Reload summary with new data
             const freshData = await calendarApi.getSummary();
             setSummaryData(freshData);
@@ -101,7 +101,7 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
       <div className="min-h-screen bg-linen flex flex-col items-center justify-center px-6">
         <div className="animate-spin rounded-full h-12 w-12 border-2 border-lime border-t-transparent mb-6"></div>
         <p className="text-ebony font-heading font-semibold text-lg mb-2">
-          {isSyncing ? 'Setting things up' : 'Loading your summary'}
+          {isSyncing ? 'Setting things up' : 'Loading Order Health Summary'}
         </p>
         <p className="text-sage text-sm text-center max-w-xs">
           {isSyncing ? syncMessage : 'Fetching your order insights...'}
@@ -140,7 +140,7 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
       <main className="max-w-4xl mx-auto px-6 py-12 space-y-12">
         {/* Hero Title */}
         <div className="text-center space-y-2 animate-fade-in">
-          <h2 className="font-heading text-3xl font-black text-ebony">Your Summary</h2>
+          <h2 className="font-heading text-3xl font-black text-ebony">Order Health Summary</h2>
           <p className="text-sage">Last 6 months of Swiggy orders</p>
         </div>
 

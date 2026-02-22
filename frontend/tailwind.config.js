@@ -7,7 +7,7 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        heading: ['Syne', 'sans-serif'],
+        heading: ['Oswald', 'sans-serif'],
         tagline: ['"Playfair Display"', 'serif'],
         sans: ['"Cal Sans"', 'sans-serif'],
         mono: ['"Roboto Mono"', 'monospace'],
