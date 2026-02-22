@@ -22,13 +22,13 @@ function LoginPage() {
 
       {/* Hero */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 pb-24">
-        <div className="w-full max-w-lg text-center space-y-10 animate-fade-in">
+        <div className="w-full flex flex-col items-center space-y-10 animate-fade-in">
           {/* Tagline */}
-          <div className="space-y-4">
-            <h1 className="font-heading text-5xl md:text-6xl font-extrabold text-ebony leading-none tracking-tight whitespace-nowrap">
+          <div className="space-y-4 text-center">
+            <h1 className="font-heading text-5xl md:text-6xl font-extrabold text-ebony leading-none tracking-tight">
               Order Smarter.
             </h1>
-            <p className="font-tagline text-ebony/60 text-base md:text-lg italic leading-relaxed whitespace-nowrap">
+            <p className="font-tagline text-ebony/60 text-base md:text-lg italic leading-relaxed">
               Zero-effort nutrition tracking for your Swiggy food orders
             </p>
           </div>
