@@ -16,7 +16,7 @@ function LoginPage() {
       <header className="w-full px-8 py-5 bg-ebony">
         <div className="flex items-center gap-2">
           <span className="text-2xl">🍽️</span>
-          <span className="font-heading text-xl font-extrabold text-white tracking-tight">Bitewise</span>
+          <span className="font-heading text-3xl font-bold text-white tracking-tight">Bitewise</span>
         </div>
       </header>
 
