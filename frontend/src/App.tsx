@@ -1,4 +1,5 @@
 import { useState, useEffect, createContext, useContext } from 'react';
+import { Analytics } from '@vercel/analytics/react';
 import { authApi } from './api/client';
 import type { User } from './types';
 import LoginPage from './components/LoginPage';
@@ -111,6 +112,7 @@ function App() {
   return (
     <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>
       {renderPage()}
+      <Analytics />
     </AuthContext.Provider>
   );
 }
