@@ -73,21 +73,32 @@ export interface SummaryResponse {
   top_dish_count: number;
   health_insights: HealthInsights | null;
   daily_health_scores: DailyHealthScore[] | null;
+  late_night_order_pct: number | null;
 }
 
 // Health Intelligence Types
 
-export interface EatMoreOfItem {
+export interface HabitItem {
   item: string;
-  is_healthy: boolean;
+  detail: string;
+}
+
+export interface NutrientLevel {
+  name: string;
+  level: 'high' | 'medium' | 'low';
 }
 
 export interface HealthInsights {
   health_index: number;  // 0-100
   one_liner: string;
-  eat_more_of: EatMoreOfItem[];
-  lacking: string[];
-  monthly_narrative: string;
+  good_habits: HabitItem[];  // Healthy things being consumed
+  bad_habits: HabitItem[];   // Unhealthy things being consumed
+  lacking: string[];         // Nutrients/foods missing from diet
+  best_dishes: string[];     // Healthiest dishes ordered
+  worst_dishes: string[];    // Unhealthiest dishes ordered
+  narrative: string;         // Second person narrative
+  nutrient_levels: NutrientLevel[] | null;  // Macro/micro levels
+  late_night_pct: number | null;  // % of orders after 9pm
 }
 
 export interface DailyHealthScore {

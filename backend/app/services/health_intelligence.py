@@ -2,6 +2,7 @@
 Health Intelligence Service
 
 Analyzes food ordering patterns and generates health insights using Claude.
+Based on comprehensive nutritional science principles.
 """
 
 import json
@@ -20,17 +21,25 @@ class HealthInsights:
     """Complete health intelligence output."""
     health_index: int  # 0-100
     one_liner: str
-    eat_more_of: list[dict]  # [{"item": "Fried foods", "is_healthy": False}, ...]
-    lacking: list[str]  # ["Protein", "Fiber", ...]
-    monthly_narrative: str
+    good_habits: list[dict]  # [{"item": "Whole grains", "detail": "Chapati, roti"}]
+    bad_habits: list[dict]   # [{"item": "Fried foods", "detail": "Vada, pakora"}]
+    lacking: list[str]       # ["Protein", "Fiber", ...]
+    best_dishes: list[str]   # Top 2-3 healthiest dishes ordered
+    worst_dishes: list[str]  # Top 2-3 unhealthiest dishes ordered
+    narrative: str           # Second person narrative
+    nutrient_levels: list[dict] = None  # [{"name": "Protein", "level": "low"}]
 
 
 class HealthIntelligenceService:
     """
     Service for generating health insights using Claude.
 
-    Analyzes dish patterns, calculates health index, and generates
-    personalized insights about eating habits.
+    Analyzes dish patterns based on nutritional science:
+    - Macronutrients (protein, carbs, fats)
+    - Fiber intake
+    - Sugar content
+    - Processed vs whole foods
+    - Meal timing
     """
 
     def __init__(self, db: Session = None):
@@ -45,7 +54,8 @@ class HealthIntelligenceService:
         total_orders: int,
         total_months: int,
         avg_daily_calories: float,
-        top_dishes: list[str]
+        top_dishes: list[str],
+        late_night_order_pct: float = 0.0
     ) -> Optional[HealthInsights]:
         """
         Generate comprehensive health insights from ordering data.
@@ -56,6 +66,7 @@ class HealthIntelligenceService:
             total_months: Number of months analyzed
             avg_daily_calories: Average calories on days with orders
             top_dishes: Top 5 most ordered dishes
+            late_night_order_pct: Percentage of orders after 10pm
 
         Returns:
             HealthInsights object with all analysis
@@ -74,44 +85,85 @@ DATA SUMMARY:
 - Total orders: {total_orders} over {total_months} months
 - Average calories on order days: {avg_daily_calories:.0f} kcal
 - Top ordered dishes: {top_dishes_str}
+- Late night orders (after 10pm): {late_night_order_pct:.0f}%
 
-DISH FREQUENCY DATA:
+DISH FREQUENCY DATA (analyze these actual orders):
 {dish_summary}
 
-Analyze these ordering patterns and provide health insights in this exact JSON format:
+ANALYZE BASED ON THESE NUTRITIONAL CATEGORIES:
+
+1. MACRONUTRIENTS:
+   - PROTEIN: dal, paneer, chicken, eggs, fish, soya, tofu, legumes
+   - CARBS: whole grains (chapati, roti, brown rice) = good; refined (naan, white rice, maida, bread) = bad
+   - FATS: healthy (nuts, ghee in moderation) = good; fried/trans fats = bad
+
+2. FIBER: vegetables, salads, dal, whole grains, fruits
+
+3. MICRONUTRIENTS (vitamins, minerals): fruits, vegetables, leafy greens
+
+4. PROBLEM FOODS:
+   - FRIED: vada, pakora, samosa, french fries, fried rice, crispy items
+   - PROCESSED: burgers, pizza, instant noodles, packaged snacks
+   - HIGH SUGAR: desserts, sweetened drinks, mithai
+   - REFINED CARBS: naan, white bread, maida items
+
+5. MEAL TIMING: Late night orders (after 10pm) = poor for digestion
+
+HEALTH INDEX SCORING (0-100):
+- Start at 50 (baseline)
+- Protein sources present: +15
+- Fiber/vegetables present: +15
+- Whole grains present: +10
+- Variety of food groups: +10
+- Fried foods frequent: -15
+- Processed foods frequent: -10
+- High sugar items: -10
+- Late night orders >20%: -5
+
+Provide analysis in this EXACT JSON format:
 
 {{
-  "health_index": <0-100 score>,
-  "one_liner": "<Single impactful sentence about their diet, max 80 chars>",
-  "eat_more_of": [
-    {{"item": "<food category they frequently order>", "is_healthy": true/false}},
-    {{"item": "<food category they frequently order>", "is_healthy": true/false}},
-    {{"item": "<food category they frequently order>", "is_healthy": true/false}},
-    {{"item": "<food category they frequently order>", "is_healthy": true/false}}
+  "health_index": <0-100 calculated score>,
+  "one_liner": "<Impactful summary under 60 chars>",
+  "good_habits": [
+    {{"item": "<Macro/nutrient category>", "detail": "<Actual dish names from their orders>"}},
+    {{"item": "<Macro/nutrient category>", "detail": "<Actual dish names from their orders>"}}
   ],
-  "lacking": ["<nutrient/food type 1>", "<nutrient/food type 2>", "<nutrient/food type 3>"],
-  "monthly_narrative": "<2-3 sentence detailed analysis of their eating habits>"
+  "bad_habits": [
+    {{"item": "<Problem category>", "detail": "<Actual dish names from their orders>"}},
+    {{"item": "<Problem category>", "detail": "<Actual dish names from their orders>"}}
+  ],
+  "lacking": ["<Specific nutrient or food type>", "<Specific nutrient or food type>"],
+  "best_dishes": ["<Exact dish name from orders>", "<Exact dish name from orders>"],
+  "worst_dishes": ["<Exact dish name from orders>", "<Exact dish name from orders>"],
+  "narrative": "<2-3 sentences in SECOND PERSON starting with 'You' or 'Your'. Be specific about dishes and their nutritional impact.>",
+  "nutrient_levels": [
+    {{"name": "Protein", "level": "<high/medium/low>"}},
+    {{"name": "Fiber", "level": "<high/medium/low>"}},
+    {{"name": "Healthy Fats", "level": "<high/medium/low>"}},
+    {{"name": "Vitamins", "level": "<high/medium/low>"}},
+    {{"name": "Refined Carbs", "level": "<high/medium/low>"}},
+    {{"name": "Fried Foods", "level": "<high/medium/low>"}}
+  ]
 }}
 
-HEALTH INDEX GUIDELINES (0-100):
-- 80-100: Balanced diet with good protein, fiber, variety, low fried foods
-- 60-79: Moderate balance, some areas to improve
-- 40-59: Imbalanced, significant gaps (too much fried/processed, low protein/fiber)
-- 0-39: Heavily imbalanced, major nutritional concerns
+CRITICAL REQUIREMENTS:
+1. good_habits: Use categories like "Protein intake", "Fiber from dal", "Whole grains". Detail must have ACTUAL dish names from their orders.
+2. bad_habits: Use categories like "Fried foods", "Refined carbs", "High sugar", "Processed foods". Detail must have ACTUAL dish names.
+3. lacking: Be SPECIFIC - use terms like "Fiber", "Protein", "Vegetables", "Fruits", "Iron", "Vitamin C", "Leafy greens", "Complex carbs"
+4. best_dishes: Pick 2-3 EXACT dish names from their order data that are healthiest
+5. worst_dishes: Pick 2-3 EXACT dish names from their order data that are least healthy
+6. narrative: MUST be second person ("You consume...", "Your diet shows...")
+7. nutrient_levels: Assess each nutrient as "high", "medium", or "low" based on dishes ordered
+8. If no good habits found, still provide empty array []
+9. If no bad habits found, still provide empty array []
+10. ALWAYS provide at least 2 items in lacking - everyone has nutritional gaps
 
-IMPORTANT - "eat_more_of" MUST list what the user ACTUALLY orders frequently (based on the dish data above):
-- This is "What You Eat More Of" - list food CATEGORIES they order a lot, both good and bad
-- MUST include unhealthy items if they order them (fried foods, biryani, naan, desserts, etc.)
-- Mark is_healthy=true for: Protein (dal, paneer, chicken, eggs), vegetables, salads, grilled items, whole grains
-- Mark is_healthy=false for: Fried foods, biryani, refined carbs (naan, white rice), desserts, processed foods, high-calorie curries
-
-For "lacking": List nutrients/food types they should ADD to their diet (things they DON'T order enough).
-
-Be specific based on the actual dish data. Return ONLY valid JSON, no other text."""
+Return ONLY valid JSON, no other text."""
 
             response = self.anthropic_client.messages.create(
                 model="claude-3-haiku-20240307",
-                max_tokens=800,
+                max_tokens=1000,
                 messages=[{"role": "user", "content": prompt}]
             )
 
@@ -130,14 +182,19 @@ Be specific based on the actual dish data. Return ONLY valid JSON, no other text
 
             return HealthInsights(
                 health_index=min(100, max(0, int(data.get("health_index", 50)))),
-                one_liner=data.get("one_liner", "")[:100],
-                eat_more_of=data.get("eat_more_of", []),
+                one_liner=data.get("one_liner", "")[:80],
+                good_habits=data.get("good_habits", []),
+                bad_habits=data.get("bad_habits", []),
                 lacking=data.get("lacking", []),
-                monthly_narrative=data.get("monthly_narrative", "")
+                best_dishes=data.get("best_dishes", []),
+                worst_dishes=data.get("worst_dishes", []),
+                narrative=data.get("narrative", ""),
+                nutrient_levels=data.get("nutrient_levels", [])
             )
 
         except json.JSONDecodeError as e:
             print(f"Health insights JSON parse error: {e}")
+            print(f"Raw response: {result_text[:500] if 'result_text' in dir() else 'N/A'}")
             return None
         except Exception as e:
             print(f"Health insights generation error: {e}")
@@ -159,14 +216,16 @@ Be specific based on the actual dish data. Return ONLY valid JSON, no other text
 
     def calculate_daily_health_scores(
         self,
-        daily_orders: dict,  # {date_str: [{"dishes": [...], "calories": float}, ...]}
+        daily_orders: dict,  # {date_str: [{"dishes": [...], "calories": float, "hour": int}, ...]}
         base_health_index: int
     ) -> list[dict]:
         """
         Calculate health scores for each day based on what was ordered.
 
-        This is a simplified calculation based on the overall health index
-        and daily calorie levels. Days with extreme calories get adjusted scores.
+        Factors:
+        - Calorie levels (high = penalty)
+        - Late night ordering (after 10pm = penalty)
+        - Dish types (fried items = penalty)
 
         Args:
             daily_orders: Dictionary mapping dates to order data
@@ -187,28 +246,40 @@ Be specific based on the actual dish data. Return ONLY valid JSON, no other text
         )
         avg_calories = total_calories / len(daily_orders) if daily_orders else 0
 
+        # Fried food keywords
+        fried_keywords = ['vada', 'pakora', 'samosa', 'fries', 'fried', 'crispy', 'crunchy']
+
         for date_str, orders in daily_orders.items():
             day_calories = sum(order.get("calories", 0) for order in orders)
+            adjustment = 0
 
-            # Adjust health index based on daily deviation from average
+            # Calorie adjustment
             if avg_calories > 0:
                 calorie_ratio = day_calories / avg_calories
-
-                # High calorie days get lower scores
                 if calorie_ratio > 1.5:
-                    adjustment = -20
+                    adjustment -= 15
                 elif calorie_ratio > 1.2:
-                    adjustment = -10
-                elif calorie_ratio < 0.7:
-                    adjustment = 10  # Low calorie days slightly better
-                elif calorie_ratio < 0.9:
-                    adjustment = 5
-                else:
-                    adjustment = 0
+                    adjustment -= 8
+                elif calorie_ratio < 0.8:
+                    adjustment += 5
 
-                day_score = max(0, min(100, base_health_index + adjustment))
-            else:
-                day_score = base_health_index
+            # Late night adjustment
+            for order in orders:
+                hour = order.get("hour", 12)
+                if hour >= 22 or hour < 5:  # After 10pm or before 5am
+                    adjustment -= 10
+                    break
+
+            # Fried food adjustment
+            for order in orders:
+                dishes = order.get("dishes", [])
+                for dish in dishes:
+                    dish_lower = dish.lower()
+                    if any(kw in dish_lower for kw in fried_keywords):
+                        adjustment -= 5
+                        break
+
+            day_score = max(0, min(100, base_health_index + adjustment))
 
             results.append({
                 "date": date_str,

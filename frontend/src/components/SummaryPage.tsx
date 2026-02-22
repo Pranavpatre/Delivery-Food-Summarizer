@@ -1,75 +1,24 @@
 import { useState, useEffect, useMemo } from 'react';
-import { calendarApi, syncApi } from '../api/client';
+import { calendarApi } from '../api/client';
 import { useAuth } from '../App';
-import type { SummaryResponse, MonthData, EatMoreOfItem } from '../types';
+import type { SummaryResponse, MonthData, HabitItem, NutrientLevel } from '../types';
 
 interface SummaryPageProps {
   onGoToCalendar: () => void;
 }
 
-type ChartMetric = 'price' | 'orders' | 'calories';
-
-const LOADING_STEPS = [
-  { message: 'Syncing emails', icon: '📧' },
-  { message: 'Searching ordered food', icon: '🔍' },
-  { message: 'Calculating calories', icon: '🔥' },
-  { message: 'Almost there', icon: '⏳' },
-  { message: 'Pulling up Summary', icon: '📊' },
-];
+type ChartMetric = 'price' | 'calories' | 'orders';
 
 function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
   const { user, logout } = useAuth();
   const [summaryData, setSummaryData] = useState<SummaryResponse | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [isSyncing, setIsSyncing] = useState(false);
-  const [loadingStep, setLoadingStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [activeMetric, setActiveMetric] = useState<ChartMetric>('price');
 
-  // Cycle through loading messages
   useEffect(() => {
-    if (!isSyncing) {
-      setLoadingStep(0);
-      return;
-    }
-
-    const interval = setInterval(() => {
-      setLoadingStep((prev) => {
-        if (prev < LOADING_STEPS.length - 1) {
-          return prev + 1;
-        }
-        return prev;
-      });
-    }, 1200);
-
-    return () => clearInterval(interval);
-  }, [isSyncing]);
-
-  useEffect(() => {
-    syncAndLoadSummary();
+    loadSummary();
   }, []);
-
-  const syncAndLoadSummary = async () => {
-    setIsLoading(true);
-    setIsSyncing(true);
-    setLoadingStep(0);
-    setError(null);
-    try {
-      // Trigger sync to get latest emails for the 6-month window
-      await syncApi.triggerSync();
-      // Wait for sync to process (matches loading step timing: 5 steps × 1200ms = 6000ms)
-      await new Promise(resolve => setTimeout(resolve, 5500));
-      // Then load the summary
-      const data = await calendarApi.getSummary();
-      setSummaryData(data);
-    } catch (err) {
-      setError('Failed to load summary data');
-      console.error(err);
-    } finally {
-      setIsLoading(false);
-      setIsSyncing(false);
-    }
-  };
 
   const loadSummary = async () => {
     setIsLoading(true);
@@ -78,658 +27,529 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
       const data = await calendarApi.getSummary();
       setSummaryData(data);
     } catch (err) {
-      setError('Failed to load summary data');
+      setError('Failed to load data. Retry?');
       console.error(err);
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Reverse months_data so oldest is first (for chronological chart display)
   const chartData = useMemo(() => {
     if (!summaryData?.months_data) return [];
     return [...summaryData.months_data].reverse();
   }, [summaryData]);
 
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-linen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-lime border-t-transparent"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-linen flex flex-col items-center justify-center px-6">
+        <p className="text-ebony mb-4 text-center">{error}</p>
+        <button onClick={loadSummary} className="btn-secondary">Retry</button>
+      </div>
+    );
+  }
+
   return (
-    <div className="min-h-screen bg-gradient-to-b from-cream via-cream to-sage/30">
+    <div className="min-h-screen bg-linen">
       {/* Header */}
-      <header className="bg-olive">
-        <div className="max-w-4xl mx-auto px-4 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">🍽️</span>
-              <h1 className="font-heading text-xl font-black text-cream">Bitewise</h1>
-            </div>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-cream/80">{user?.email}</span>
-              <button
-                onClick={logout}
-                className="text-sm text-cream/60 hover:text-cream transition-colors"
-              >
-                Sign out
-              </button>
-            </div>
+      <header className="bg-ebony text-linen px-6 py-4">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🍽️</span>
+            <h1 className="font-heading text-xl font-black">Bitewise</h1>
+          </div>
+          <div className="flex items-center gap-4 text-sm">
+            <span className="text-linen/80">{user?.email}</span>
+            <button onClick={logout} className="hover:text-linen/70 transition-colors">
+              Sign out
+            </button>
           </div>
         </div>
       </header>
 
-      <main className="max-w-4xl mx-auto px-4 py-8">
-        {isLoading ? (
-          <div className="flex flex-col items-center justify-center py-20">
-            {isSyncing ? (
-              <div className="flex flex-col items-center gap-4">
-                <span
-                  className="text-5xl animate-bounce"
-                  style={{ animationDuration: '1s' }}
-                >
-                  {LOADING_STEPS[loadingStep].icon}
-                </span>
-                <p className="text-lg font-medium text-dark">
-                  {LOADING_STEPS[loadingStep].message}
-                </p>
-                <div className="flex gap-1.5 mt-2">
-                  {LOADING_STEPS.map((_, index) => (
-                    <div
-                      key={index}
-                      className={`w-2 h-2 rounded-full transition-all duration-300 ${
-                        index <= loadingStep ? 'bg-lime' : 'bg-sage/50'
-                      }`}
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-lime"></div>
-            )}
+      <main className="max-w-4xl mx-auto px-6 py-12 space-y-12">
+        {/* Hero Title */}
+        <div className="text-center space-y-2 animate-fade-in">
+          <h2 className="font-heading text-3xl font-black text-ebony">Your Summary</h2>
+          <p className="text-sage">Last 6 months of Swiggy orders</p>
+        </div>
+
+        {/* Health Index & Key Metrics */}
+        <div className="grid md:grid-cols-2 gap-8 animate-fade-in">
+          {/* Health Index */}
+          {summaryData?.health_insights && (
+            <HealthIndexCard
+              healthIndex={summaryData.health_insights.health_index}
+              oneLiner={summaryData.health_insights.one_liner}
+            />
+          )}
+
+          {/* Summary Cards - 2x2 */}
+          <div className="grid grid-cols-2 gap-4">
+            <MetricCard
+              icon="💰"
+              value={`₹${Math.round(summaryData?.avg_monthly_spend || 0).toLocaleString()}`}
+              label="Monthly Spend"
+            />
+            <MetricCard
+              icon="🔥"
+              value={`${Math.round(summaryData?.avg_monthly_calories || 0).toLocaleString()}`}
+              label="Monthly Calories"
+              unit="kcal"
+            />
+            <MetricCard
+              icon="🛒"
+              value={summaryData?.avg_order_count?.toFixed(1) || '0'}
+              label="Orders/Month"
+            />
+            <MetricCard
+              icon="📅"
+              value={summaryData?.avg_days_ordered?.toFixed(1) || '0'}
+              label="Days Ordered"
+            />
           </div>
-        ) : error ? (
-          <div className="text-center py-20">
-            <p className="text-red-600 mb-4">{error}</p>
-            <button onClick={loadSummary} className="bg-sage/50 text-dark px-4 py-2 rounded-lg hover:bg-sage transition-colors">
-              Retry
-            </button>
-          </div>
-        ) : (
-          <>
-            {/* Title */}
-            <div className="text-center mb-8">
-              <h2 className="font-heading text-3xl font-black text-dark mb-2">
-                Food Delivery Summarized
-              </h2>
-              <p className="text-olive/70">Your ordering patterns over the last 6 months</p>
-            </div>
+        </div>
 
-            {/* Health Index Circular Meter */}
-            {summaryData?.health_insights && (
-              <HealthIndexMeter
-                healthIndex={summaryData.health_insights.health_index}
-                oneLiner={summaryData.health_insights.one_liner}
-              />
-            )}
-
-            {/* Summary Cards */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-8">
-              {/* Avg Monthly Spend */}
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-5 text-center shadow-sm">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-lime/20 flex items-center justify-center">
-                  <span className="text-2xl">💰</span>
-                </div>
-                <p className="text-3xl font-bold text-lime mb-1">
-                  ₹{Math.round(summaryData?.avg_monthly_spend || 0).toLocaleString()}
-                </p>
-                <p className="text-olive/70 text-sm font-medium">Avg Monthly Spend</p>
-              </div>
-
-              {/* Avg Calories */}
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-5 text-center shadow-sm">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-orange-100 flex items-center justify-center">
-                  <span className="text-2xl">🔥</span>
-                </div>
-                <p className="text-3xl font-bold text-orange-500 mb-1">
-                  {Math.round(summaryData?.avg_monthly_calories || 0).toLocaleString()}
-                </p>
-                <p className="text-olive/70 text-sm font-medium">Avg Monthly Calories</p>
-              </div>
-
-              {/* Avg Orders */}
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-5 text-center shadow-sm">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-sage/30 flex items-center justify-center">
-                  <span className="text-2xl">🛒</span>
-                </div>
-                <p className="text-3xl font-bold text-sage mb-1">
-                  {summaryData?.avg_order_count?.toFixed(1) || 0}
-                </p>
-                <p className="text-olive/70 text-sm font-medium">Avg Monthly Orders</p>
-              </div>
-
-              {/* Avg Days Ordered */}
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-5 text-center shadow-sm">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-olive/10 flex items-center justify-center">
-                  <span className="text-2xl">📅</span>
-                </div>
-                <p className="text-3xl font-bold text-olive mb-1">
-                  {summaryData?.avg_days_ordered?.toFixed(1) || 0}
-                </p>
-                <p className="text-olive/70 text-sm font-medium">Avg Days Ordered</p>
-              </div>
-
-              {/* Top Dish */}
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-5 text-center shadow-sm col-span-2 md:col-span-1">
-                <div className="w-12 h-12 mx-auto mb-3 rounded-full bg-pink-100 flex items-center justify-center">
-                  <span className="text-2xl">⭐</span>
-                </div>
-                <p className="text-2xl font-bold text-pink-500 mb-1 truncate" title={summaryData?.top_dish || 'No data'}>
-                  {summaryData?.top_dish_count || 0}x
-                </p>
-                <p className="text-olive/70 text-sm font-medium truncate" title={summaryData?.top_dish || 'No data'}>
-                  {summaryData?.top_dish || '—'}
-                </p>
-              </div>
-            </div>
-
-            {/* Nutrition Balance Card */}
-            {summaryData?.health_insights && (
-              <NutritionBalanceCard
-                eatMoreOf={summaryData.health_insights.eat_more_of}
-                lacking={summaryData.health_insights.lacking}
-              />
-            )}
-
-            {/* MoM Trend Chart */}
-            {chartData.length > 0 && chartData.some(m => m.order_count > 0) && (
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-6 mb-8 shadow-sm">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-lg font-semibold text-dark">Monthly Trends</h3>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => setActiveMetric('price')}
-                      className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                        activeMetric === 'price'
-                          ? 'bg-lime/20 text-lime font-medium'
-                          : 'bg-sage/20 text-olive/70 hover:bg-sage/30'
-                      }`}
-                    >
-                      Spend
-                    </button>
-                    <button
-                      onClick={() => setActiveMetric('orders')}
-                      className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                        activeMetric === 'orders'
-                          ? 'bg-sage/40 text-dark font-medium'
-                          : 'bg-sage/20 text-olive/70 hover:bg-sage/30'
-                      }`}
-                    >
-                      Orders
-                    </button>
-                    <button
-                      onClick={() => setActiveMetric('calories')}
-                      className={`px-3 py-1 text-sm rounded-full transition-colors ${
-                        activeMetric === 'calories'
-                          ? 'bg-orange-100 text-orange-600 font-medium'
-                          : 'bg-sage/20 text-olive/70 hover:bg-sage/30'
-                      }`}
-                    >
-                      Calories
-                    </button>
-                  </div>
-                </div>
-                <TrendChart data={chartData} metric={activeMetric} />
-              </div>
-            )}
-
-            {/* Health Narrative Card */}
-            {summaryData?.health_insights?.monthly_narrative && (
-              <HealthNarrativeCard narrative={summaryData.health_insights.monthly_narrative} />
-            )}
-
-            {/* Month Breakdown */}
-            {summaryData?.months_data && summaryData.months_data.length > 0 && (
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-6 mb-8 shadow-sm">
-                <h3 className="text-lg font-semibold text-dark mb-4">Monthly Breakdown</h3>
-                <div className="space-y-3">
-                  {summaryData.months_data.map((month) => (
-                    <div key={`${month.year}-${month.month_num}`} className="flex items-center justify-between p-4 bg-sage/10 rounded-lg">
-                      <div>
-                        <p className="font-medium text-dark">{month.month}</p>
-                        <p className="text-sm text-olive/60">{month.order_count} orders over {month.days_ordered} days</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-lg font-bold text-lime">₹{Math.round(month.total_price).toLocaleString()}</p>
-                        <p className="text-sm text-orange-500">{Math.round(month.total_calories).toLocaleString()} kcal</p>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            {/* No Data Message */}
-            {(!summaryData?.months_data || summaryData.months_data.every(m => m.order_count === 0)) && (
-              <div className="bg-white/60 backdrop-blur border border-sage/30 rounded-xl p-8 text-center mb-8 shadow-sm">
-                <span className="text-5xl mb-4 block">📭</span>
-                <p className="text-dark mb-2">No order data found for the last 6 months</p>
-                <p className="text-sm text-olive/60">Sync your emails from the calendar page to see your stats</p>
-              </div>
-            )}
-
-            {/* Go to Calendar Button */}
-            <div className="text-center">
-              <button
-                onClick={onGoToCalendar}
-                className="bg-olive hover:bg-olive/90 text-cream font-semibold text-lg px-8 py-3 rounded-xl transition-colors shadow-lg"
-              >
-                Go to Calendar →
-              </button>
-            </div>
-          </>
+        {/* Quick Insights */}
+        {summaryData?.health_insights && (
+          <InsightsCard
+            goodHabits={summaryData.health_insights.good_habits}
+            badHabits={summaryData.health_insights.bad_habits}
+            lacking={summaryData.health_insights.lacking}
+            narrative={summaryData.health_insights.narrative}
+          />
         )}
+
+        {/* Your Order Mix */}
+        {summaryData?.health_insights && (
+          <FoodSnapshotCard
+            bestDishes={summaryData.health_insights.best_dishes}
+            worstDishes={summaryData.health_insights.worst_dishes}
+          />
+        )}
+
+        {/* Nutrient Levels */}
+        {summaryData?.health_insights?.nutrient_levels &&
+          summaryData.health_insights.nutrient_levels.length > 0 && (
+            <NutrientLevelsCard nutrientLevels={summaryData.health_insights.nutrient_levels} />
+          )}
+
+        {/* Late Night Eating */}
+        {summaryData?.late_night_order_pct != null &&
+          summaryData.late_night_order_pct > 0 ? (
+            <LateNightCard lateNightPct={summaryData.late_night_order_pct} />
+          ) : summaryData?.months_data && summaryData.months_data.some(m => m.order_count > 0) ? (
+            <div className="card">
+              <div className="flex items-start gap-4">
+                <div className="text-3xl">🌙</div>
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-ebony mb-2">Late Night Orders</h3>
+                  <p className="text-sm text-ebony/70 leading-relaxed">
+                    Order timing data is not available for older syncs. Re-sync your emails from the calendar page to see your late-night ordering patterns.
+                  </p>
+                </div>
+              </div>
+            </div>
+          ) : null}
+
+        {/* Monthly Trends Chart */}
+        {chartData.length > 1 && chartData.some(m => m.order_count > 0) && (
+          <div className="card">
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-semibold text-ebony">Monthly Trends</h3>
+              <div className="flex gap-2">
+                {(['price', 'calories', 'orders'] as ChartMetric[]).map(m => (
+                  <button
+                    key={m}
+                    onClick={() => setActiveMetric(m)}
+                    className={`px-3 py-1 text-sm rounded-full transition-colors ${
+                      activeMetric === m
+                        ? 'bg-lime/10 text-lime font-medium'
+                        : 'text-sage hover:text-ebony'
+                    }`}
+                  >
+                    {m === 'price' ? 'Spend' : m === 'calories' ? 'Calories' : 'Orders'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <TrendChart data={chartData} metric={activeMetric} />
+          </div>
+        )}
+
+        {/* No Data */}
+        {(!summaryData?.months_data ||
+          summaryData.months_data.every(m => m.order_count === 0)) && (
+          <div className="card text-center py-12">
+            <p className="text-3xl mb-4">📭</p>
+            <p className="text-ebony mb-2">No order data found for the last 6 months</p>
+            <p className="text-sm text-sage">Sync your emails from the calendar page to see your stats</p>
+          </div>
+        )}
+
+        {/* CTA */}
+        <div className="text-center">
+          <button onClick={onGoToCalendar} className="btn-primary text-lg px-8">
+            View Calendar →
+          </button>
+        </div>
       </main>
     </div>
   );
 }
 
-interface TrendChartProps {
-  data: MonthData[];
-  metric: ChartMetric;
+// --- Sub-components ---
+
+function MetricCard({
+  icon,
+  value,
+  label,
+  unit,
+}: {
+  icon: string;
+  value: string;
+  label: string;
+  unit?: string;
+}) {
+  return (
+    <div className="card text-center p-4">
+      <div className="text-2xl mb-2">{icon}</div>
+      <div className="metric text-2xl md:text-3xl mb-1">
+        {value}
+        {unit && <span className="text-sm font-normal text-sage ml-1">{unit}</span>}
+      </div>
+      <p className="text-xs text-sage">{label}</p>
+    </div>
+  );
 }
 
-function TrendChart({ data, metric }: TrendChartProps) {
-  const [animationStarted, setAnimationStarted] = useState(false);
-
-  // Trigger animation on mount and when metric changes
-  useEffect(() => {
-    setAnimationStarted(false);
-    const timer = setTimeout(() => setAnimationStarted(true), 50);
-    return () => clearTimeout(timer);
-  }, [metric]);
-
-  const chartConfig = {
-    price: {
-      color: '#85CB33', // lime
-      label: 'Order Value',
-      getValue: (m: MonthData) => m.total_price,
-      formatValue: (v: number) => `₹${Math.round(v).toLocaleString()}`,
-    },
-    orders: {
-      color: '#A5CBC3', // sage
-      label: 'Number of Orders',
-      getValue: (m: MonthData) => m.order_count,
-      formatValue: (v: number) => `${v} orders`,
-    },
-    calories: {
-      color: '#f97316', // orange
-      label: 'Calorie Count',
-      getValue: (m: MonthData) => m.total_calories,
-      formatValue: (v: number) => `${Math.round(v).toLocaleString()} kcal`,
-    },
+function HealthIndexCard({
+  healthIndex,
+  oneLiner,
+}: {
+  healthIndex: number;
+  oneLiner: string;
+}) {
+  const getColor = (score: number) => {
+    if (score >= 80) return 'text-lime';
+    if (score >= 60) return 'text-lime/80';
+    if (score >= 40) return 'text-amber';
+    return 'text-red-500';
   };
 
-  const config = chartConfig[metric];
-  const values = data.map(config.getValue);
-  const maxValue = Math.max(...values, 1);
+  const getLabel = (score: number) => {
+    if (score >= 80) return 'Excellent';
+    if (score >= 60) return 'Good';
+    if (score >= 40) return 'Fair';
+    return 'Needs Work';
+  };
 
-  // Chart dimensions
-  const chartHeight = 200;
-  const barWidth = 100 / data.length;
-  const padding = 4;
+  const getBgColor = (score: number) => {
+    if (score >= 80) return 'bg-lime/10';
+    if (score >= 60) return 'bg-lime/5';
+    if (score >= 40) return 'bg-amber/10';
+    return 'bg-red-50';
+  };
+
+  return (
+    <div className="card flex flex-col items-center justify-center py-8">
+      <h3 className="text-lg font-semibold text-ebony mb-6">Health Index</h3>
+      <div className={`metric text-6xl ${getColor(healthIndex)}`}>
+        {healthIndex}
+      </div>
+      <span className="text-sm text-sage mt-1">/100</span>
+      <div
+        className={`mt-4 px-4 py-1 rounded-full text-sm font-medium ${getBgColor(healthIndex)} ${getColor(healthIndex)}`}
+      >
+        {getLabel(healthIndex)}
+      </div>
+      <p className="text-sm text-sage mt-4 text-center leading-relaxed max-w-xs">
+        "{oneLiner}"
+      </p>
+    </div>
+  );
+}
+
+function InsightsCard({
+  goodHabits,
+  badHabits,
+  lacking,
+  narrative,
+}: {
+  goodHabits: HabitItem[];
+  badHabits: HabitItem[];
+  lacking: string[];
+  narrative?: string;
+}) {
+  return (
+    <div className="card space-y-6">
+      <h3 className="text-lg font-semibold text-ebony">Quick Insights</h3>
+
+      {narrative && (
+        <p className="text-sm text-ebony/80 leading-relaxed border-b border-sage/10 pb-4">
+          {narrative}
+        </p>
+      )}
+
+      <div className="grid md:grid-cols-3 gap-6">
+        <div>
+          <h4 className="font-medium text-ebony mb-3">The Good</h4>
+          <ul className="space-y-2 text-sm">
+            {goodHabits.length > 0 ? (
+              goodHabits.slice(0, 4).map((h, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-lime text-xs mt-1">●</span>
+                  <span className="text-ebony/80">{h.item}</span>
+                </li>
+              ))
+            ) : (
+              <li className="text-sage italic">No strengths detected yet</li>
+            )}
+          </ul>
+        </div>
+        <div>
+          <h4 className="font-medium text-amber mb-3">The Bad</h4>
+          <ul className="space-y-2 text-sm">
+            {badHabits.length > 0 ? (
+              badHabits.slice(0, 4).map((h, i) => (
+                <li key={i} className="flex items-start gap-2">
+                  <span className="text-amber text-xs mt-1">●</span>
+                  <span className="text-ebony/80">{h.item}</span>
+                </li>
+              ))
+            ) : (
+              <li className="text-sage italic">No concerns detected</li>
+            )}
+          </ul>
+        </div>
+        <div>
+          <h4 className="font-medium text-sage mb-3">The Missing</h4>
+          <ul className="space-y-2 text-sm">
+            {lacking.length > 0 ? (
+              lacking.slice(0, 4).map((l, i) => (
+                <li key={i} className="text-ebony/80">{l}</li>
+              ))
+            ) : (
+              <li className="text-sage italic">Diet seems balanced</li>
+            )}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FoodSnapshotCard({
+  bestDishes,
+  worstDishes,
+}: {
+  bestDishes: string[];
+  worstDishes: string[];
+}) {
+  if (bestDishes.length === 0 && worstDishes.length === 0) return null;
+
+  return (
+    <div className="card">
+      <h3 className="text-lg font-semibold text-ebony mb-4">Order Mix</h3>
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <h4 className="text-sm font-medium text-lime mb-3">Nutritious Picks</h4>
+          <ul className="space-y-2">
+            {bestDishes.length > 0 ? (
+              bestDishes.map((dish, i) => (
+                <li key={i} className="text-sm text-ebony/80 flex items-center gap-2">
+                  <span className="text-lime">●</span> {dish}
+                </li>
+              ))
+            ) : (
+              <li className="text-sm text-sage italic">No smart picks found</li>
+            )}
+          </ul>
+        </div>
+        <div>
+          <h4 className="text-sm font-medium text-amber mb-3">Cheat Picks</h4>
+          <ul className="space-y-2">
+            {worstDishes.length > 0 ? (
+              worstDishes.map((dish, i) => (
+                <li key={i} className="text-sm text-ebony/80 flex items-center gap-2">
+                  <span className="text-amber">●</span> {dish}
+                </li>
+              ))
+            ) : (
+              <li className="text-sm text-sage italic">No treat picks found</li>
+            )}
+          </ul>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NutrientLevelsCard({ nutrientLevels }: { nutrientLevels: NutrientLevel[] }) {
+  // These nutrients are unhealthy — "high" is bad, "low" is good (inverted colors)
+  const UNHEALTHY_NUTRIENTS = ['refined carbs', 'fried foods', 'fried food', 'sugar', 'sodium', 'processed foods', 'saturated fat'];
+
+  const isUnhealthy = (name: string) =>
+    UNHEALTHY_NUTRIENTS.some(u => name.toLowerCase().includes(u));
+
+  const getLevelStyle = (name: string, level: string) => {
+    const inverted = isUnhealthy(name);
+    switch (level) {
+      case 'high':
+        return inverted ? 'text-red-500' : 'text-lime';
+      case 'medium':
+        return 'text-amber';
+      case 'low':
+        return inverted ? 'text-lime' : 'text-red-500';
+      default:
+        return 'text-sage';
+    }
+  };
+
+  return (
+    <div className="card">
+      <h3 className="text-lg font-semibold text-ebony mb-4">Nutrient Snapshot</h3>
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        {nutrientLevels.map((n, i) => (
+          <div key={i} className="text-center p-3 border border-sage/10 rounded-xl">
+            <p className="text-xs text-sage uppercase tracking-wide mb-1">{n.name}</p>
+            <p className={`font-mono font-bold text-lg ${getLevelStyle(n.name, n.level)}`}>
+              {n.level.toUpperCase()}
+            </p>
+          </div>
+        ))}
+      </div>
+      <p className="text-xs text-sage mt-4 text-center">
+        Based on analysis of your frequently ordered dishes
+      </p>
+    </div>
+  );
+}
+
+function LateNightCard({ lateNightPct }: { lateNightPct: number }) {
+  const isHigh = lateNightPct >= 40;
+  const isModerate = lateNightPct >= 20;
+
+  const getMessage = (pct: number) => {
+    if (pct >= 40)
+      return 'Late-night eating is linked to weight gain, poor sleep quality, and metabolic issues.';
+    if (pct >= 20)
+      return 'Some late-night orders detected. Occasional late eating is fine, but regular patterns can affect metabolism.';
+    return 'Great job keeping late-night eating minimal! This supports better sleep and metabolic health.';
+  };
+
+  return (
+    <div className="card">
+      <div className="flex items-start gap-4">
+        <div className="text-3xl">🌙</div>
+        <div className="flex-1">
+          <div className="flex items-center gap-3 mb-2">
+            <h3 className="text-lg font-semibold text-ebony">Late Night Orders</h3>
+            <span
+              className={`font-mono font-bold text-2xl ${
+                isHigh ? 'text-red-500' : isModerate ? 'text-amber' : 'text-lime'
+              }`}
+            >
+              {lateNightPct.toFixed(0)}%
+            </span>
+          </div>
+          <p className="text-sm text-ebony/70 leading-relaxed">{getMessage(lateNightPct)}</p>
+          <p className="text-xs text-sage mt-2">Orders after 10 PM or before 5 AM</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// --- Trend Chart ---
+
+function TrendChart({ data, metric }: { data: MonthData[]; metric: ChartMetric }) {
+  const getValue = (m: MonthData) => {
+    if (metric === 'price') return m.total_price;
+    if (metric === 'calories') return m.total_calories;
+    return m.order_count;
+  };
+
+  const formatValue = (v: number) => {
+    if (metric === 'price') return `₹${Math.round(v).toLocaleString()}`;
+    if (metric === 'calories') return `${Math.round(v).toLocaleString()} kcal`;
+    return `${v}`;
+  };
+
+  const getBarColor = () => {
+    return 'bg-bark';
+  };
+
+  const values = data.map(getValue);
+  const rawMax = Math.max(...values, 1);
+
+  // Calculate nice round grid intervals
+  const getNiceStep = (max: number) => {
+    if (max <= 0) return 1;
+    const roughStep = max / 4;
+    const magnitude = Math.pow(10, Math.floor(Math.log10(roughStep)));
+    const residual = roughStep / magnitude;
+    if (residual <= 1) return magnitude;
+    if (residual <= 2) return 2 * magnitude;
+    if (residual <= 5) return 5 * magnitude;
+    return 10 * magnitude;
+  };
+
+  const niceStep = getNiceStep(rawMax);
+  const gridValues: number[] = [];
+  for (let v = 0; v <= rawMax; v += niceStep) {
+    gridValues.push(v);
+  }
+  // Ensure we have a line above the max
+  if (gridValues[gridValues.length - 1] < rawMax) {
+    gridValues.push(gridValues[gridValues.length - 1] + niceStep);
+  }
+  const chartMax = gridValues[gridValues.length - 1];
 
   return (
     <div className="relative">
-      {/* Y-axis labels */}
-      <div className="absolute left-0 top-0 bottom-8 w-16 flex flex-col justify-between text-xs text-olive/60 pr-2">
-        <span className="text-right">{config.formatValue(maxValue)}</span>
-        <span className="text-right">{config.formatValue(maxValue / 2)}</span>
-        <span className="text-right">0</span>
-      </div>
-
-      {/* Chart area */}
-      <div className="ml-16">
-        <div className="relative" style={{ height: chartHeight }}>
-          {/* Grid lines */}
-          <div className="absolute inset-0 flex flex-col justify-between pointer-events-none">
-            <div className="border-b border-sage/30"></div>
-            <div className="border-b border-sage/30"></div>
-            <div className="border-b border-sage/30"></div>
-          </div>
-
-          {/* Bars */}
-          <div className="absolute inset-0 flex items-end justify-around px-2">
-            {data.map((month, index) => {
-              const value = config.getValue(month);
-              // Calculate height in pixels instead of percentage
-              const barHeightPx = maxValue > 0 ? (value / maxValue) * chartHeight : 0;
-              const animatedHeight = animationStarted ? Math.max(barHeightPx, value > 0 ? 8 : 0) : 0;
-
-              return (
-                <div
-                  key={`${month.year}-${month.month_num}`}
-                  className="group relative flex items-end"
-                  style={{ width: `${barWidth - padding}%`, height: '100%' }}
-                >
-                  {/* Tooltip */}
-                  <div
-                    className="absolute left-1/2 -translate-x-1/2 opacity-0 group-hover:opacity-100 transition-opacity bg-dark text-cream text-xs rounded px-2 py-1 whitespace-nowrap z-10 pointer-events-none"
-                    style={{ bottom: Math.max(barHeightPx, 8) + 8 }}
-                  >
-                    {month.month}: {config.formatValue(value)}
-                  </div>
-
-                  {/* Bar with staggered animation */}
-                  <div
-                    className="w-full rounded-t-md hover:opacity-80"
-                    style={{
-                      height: animatedHeight,
-                      backgroundColor: config.color,
-                      transition: `height 0.5s ease-out ${index * 0.1}s`,
-                    }}
-                  />
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* X-axis labels */}
-        <div className="flex justify-around mt-2">
-          {data.map((month) => (
-            <span
-              key={`label-${month.year}-${month.month_num}`}
-              className="text-xs text-olive/60"
-              style={{ width: `${barWidth}%`, textAlign: 'center' }}
-            >
-              {month.short_month}
+      {/* Grid lines */}
+      <div className="absolute inset-0 bottom-6 flex flex-col justify-between pointer-events-none">
+        {[...gridValues].reverse().map((val, i) => (
+          <div key={i} className="flex items-center gap-2 w-full">
+            <span className="text-[10px] font-mono text-sage/60 w-16 text-right shrink-0">
+              {metric === 'orders' ? val : metric === 'price' ? `₹${val.toLocaleString()}` : val.toLocaleString()}
             </span>
-          ))}
-        </div>
+            <div className="flex-1 border-t border-sage/10" />
+          </div>
+        ))}
       </div>
 
-      {/* Legend */}
-      <div className="flex justify-center mt-4">
-        <div className="flex items-center gap-2 text-sm text-olive/70">
-          <div
-            className="w-3 h-3 rounded"
-            style={{ backgroundColor: config.color }}
-          />
-          <span>{config.label}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
+      {/* Bars */}
+      <div className="flex items-end gap-3 h-48 pl-[72px]">
+        {data.map((month, i) => {
+          const value = getValue(month);
+          const heightPct = chartMax > 0 ? (value / chartMax) * 100 : 0;
 
-// Health Index Circular Meter Component - CRED-style
-interface HealthIndexMeterProps {
-  healthIndex: number;
-  oneLiner: string;
-}
-
-function HealthIndexMeter({ healthIndex, oneLiner }: HealthIndexMeterProps) {
-  const size = 180;
-  const strokeWidth = 14;
-  const radius = (size - strokeWidth) / 2;
-  const centerX = size / 2;
-  const centerY = size / 2;
-
-  // Arc spans 240 degrees (from -210 to 30 degrees, leaving 120 degree gap at bottom)
-  const startAngle = -210;
-  const endAngle = 30;
-  const totalArc = endAngle - startAngle; // 240 degrees
-
-  // Convert angle to radians and get point on circle
-  const polarToCartesian = (angle: number) => {
-    const radians = (angle * Math.PI) / 180;
-    return {
-      x: centerX + radius * Math.cos(radians),
-      y: centerY + radius * Math.sin(radians)
-    };
-  };
-
-  // Create arc path
-  const createArc = (start: number, end: number) => {
-    const startPoint = polarToCartesian(start);
-    const endPoint = polarToCartesian(end);
-    const largeArc = end - start > 180 ? 1 : 0;
-    return `M ${startPoint.x} ${startPoint.y} A ${radius} ${radius} 0 ${largeArc} 1 ${endPoint.x} ${endPoint.y}`;
-  };
-
-  // Calculate progress angle
-  const progressAngle = startAngle + (healthIndex / 100) * totalArc;
-
-  // Get tier info
-  const getTier = (score: number) => {
-    if (score >= 80) return { label: 'Excellent', color: '#22c55e' };
-    if (score >= 60) return { label: 'Good', color: '#85CB33' };
-    if (score >= 40) return { label: 'Fair', color: '#f59e0b' };
-    return { label: 'Needs Work', color: '#ef4444' };
-  };
-
-  const tier = getTier(healthIndex);
-
-  // Get score color based on value
-  const getScoreColor = (score: number) => {
-    if (score >= 80) return '#22c55e'; // green
-    if (score >= 60) return '#85CB33'; // lime
-    if (score >= 40) return '#f59e0b'; // amber
-    if (score >= 20) return '#f97316'; // orange
-    return '#ef4444'; // red
-  };
-
-  const scoreColor = getScoreColor(healthIndex);
-
-  // Needle pointing from center to arc
-  const needleLength = radius - 20;
-  const needleEnd = {
-    x: centerX + needleLength * Math.cos((progressAngle * Math.PI) / 180),
-    y: centerY + needleLength * Math.sin((progressAngle * Math.PI) / 180)
-  };
-
-  return (
-    <div className="bg-olive rounded-2xl p-6 pt-8 mb-8 shadow-xl">
-      <div className="flex flex-col items-center">
-        {/* Title */}
-        <h3 className="text-cream text-2xl font-bold mb-4">Health Index</h3>
-
-        {/* Circular Gauge */}
-        <div className="relative" style={{ width: size, height: size - 40 }}>
-          <svg
-            width={size}
-            height={size}
-            viewBox={`0 0 ${size} ${size}`}
-            style={{ overflow: 'visible', marginTop: '-20px' }}
-          >
-            <defs>
-              {/* Main gradient for the arc */}
-              <linearGradient id="gaugeGradient" x1="0%" y1="50%" x2="100%" y2="50%">
-                <stop offset="0%" stopColor="#ef4444" />
-                <stop offset="35%" stopColor="#f59e0b" />
-                <stop offset="65%" stopColor="#85CB33" />
-                <stop offset="100%" stopColor="#22c55e" />
-              </linearGradient>
-
-              {/* Glow filter */}
-              <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
-                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
-                <feMerge>
-                  <feMergeNode in="coloredBlur"/>
-                  <feMergeNode in="SourceGraphic"/>
-                </feMerge>
-              </filter>
-
-              {/* Shadow for needle */}
-              <filter id="needleShadow" x="-50%" y="-50%" width="200%" height="200%">
-                <feDropShadow dx="0" dy="1" stdDeviation="2" floodColor="#000" floodOpacity="0.4"/>
-              </filter>
-            </defs>
-
-            {/* Background track */}
-            <path
-              d={createArc(startAngle, endAngle)}
-              fill="none"
-              stroke="#1a1a1a"
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-            />
-
-            {/* Colored gradient arc (full) - dimmed */}
-            <path
-              d={createArc(startAngle, endAngle)}
-              fill="none"
-              stroke="url(#gaugeGradient)"
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              opacity="0.25"
-            />
-
-            {/* Progress arc with glow */}
-            <path
-              d={createArc(startAngle, progressAngle)}
-              fill="none"
-              stroke="url(#gaugeGradient)"
-              strokeWidth={strokeWidth}
-              strokeLinecap="round"
-              filter="url(#glow)"
-              style={{
-                transition: 'all 1s ease-out',
-              }}
-            />
-
-            {/* Center needle */}
-            <line
-              x1={centerX}
-              y1={centerY}
-              x2={needleEnd.x}
-              y2={needleEnd.y}
-              stroke={scoreColor}
-              strokeWidth="3"
-              strokeLinecap="round"
-              filter="url(#needleShadow)"
-              style={{ transition: 'all 1s ease-out' }}
-            />
-
-            {/* Needle center dot */}
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r="8"
-              fill={scoreColor}
-              filter="url(#glow)"
-            />
-            <circle
-              cx={centerX}
-              cy={centerY}
-              r="4"
-              fill="#1a1a1a"
-            />
-          </svg>
-        </div>
-
-        {/* Score display */}
-        <div className="text-center mt-1">
-          <span
-            className="text-4xl font-black tracking-tight"
-            style={{ color: scoreColor }}
-          >
-            {healthIndex}
-          </span>
-          <span className="text-lg text-cream/40 font-medium">/100</span>
-        </div>
-        <div
-          className="text-center text-sm font-semibold mt-2 px-4 py-1 rounded-full"
-          style={{
-            color: scoreColor,
-            backgroundColor: `${scoreColor}20`
-          }}
-        >
-          {tier.label}
-        </div>
-
-        {/* Tier labels */}
-        <div className="flex justify-between w-full max-w-[180px] mt-3 px-2">
-          <span className="text-xs text-red-400/80">Poor</span>
-          <span className="text-xs text-amber-400/80">Fair</span>
-          <span className="text-xs text-lime/80">Good</span>
-          <span className="text-xs text-green-400/80">Great</span>
-        </div>
-
-        {/* One-liner insight */}
-        <p className="text-center text-cream/70 mt-3 text-sm max-w-sm leading-relaxed">
-          "{oneLiner}"
-        </p>
-      </div>
-    </div>
-  );
-}
-
-// Nutrition Balance Card Component
-interface NutritionBalanceCardProps {
-  eatMoreOf: EatMoreOfItem[];
-  lacking: string[];
-}
-
-function NutritionBalanceCard({ eatMoreOf, lacking }: NutritionBalanceCardProps) {
-  return (
-    <div className="bg-white/60 backdrop-blur border border-olive/20 rounded-xl p-6 mb-8 shadow-sm">
-      <h3 className="text-lg font-semibold text-olive mb-4 text-center">Diet Balance</h3>
-      <div className="grid grid-cols-2 gap-6">
-        {/* You Eat More Of */}
-        <div>
-          <h4 className="text-sm font-semibold text-olive/80 mb-3 flex items-center gap-2">
-            <span className="text-lg">📊</span> You Eat More Of
-          </h4>
-          <ul className="space-y-2">
-            {eatMoreOf.map((item, index) => (
-              <li
-                key={index}
-                className={`flex items-center gap-2 text-sm ${
-                  item.is_healthy ? 'text-lime' : 'text-red-500'
-                }`}
-              >
-                <span>{item.is_healthy ? '✓' : '✗'}</span>
-                <span className={item.is_healthy ? 'text-olive/80' : 'text-olive/80'}>
-                  {item.item}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        {/* You're Lacking */}
-        <div>
-          <h4 className="text-sm font-semibold text-olive/80 mb-3 flex items-center gap-2">
-            <span className="text-lg">🎯</span> You're Lacking
-          </h4>
-          <ul className="space-y-2">
-            {lacking.map((item, index) => (
-              <li key={index} className="flex items-center gap-2 text-sm text-lime">
-                <span>+</span>
-                <span className="text-olive/80">{item}</span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Health Narrative Card Component
-interface HealthNarrativeCardProps {
-  narrative: string;
-}
-
-function HealthNarrativeCard({ narrative }: HealthNarrativeCardProps) {
-  return (
-    <div className="bg-white/60 backdrop-blur border border-olive/20 rounded-xl p-6 mb-8 shadow-sm">
-      <div className="flex items-start gap-4">
-        <div className="w-10 h-10 rounded-full bg-olive/10 flex items-center justify-center flex-shrink-0">
-          <span className="text-xl">💡</span>
-        </div>
-        <div>
-          <h3 className="text-lg font-semibold text-olive mb-2">Health Snapshot</h3>
-          <p className="text-olive/70 leading-relaxed">{narrative}</p>
-          <p className="text-xs text-olive/40 mt-3">AI-generated insight based on your ordering patterns</p>
-        </div>
+          return (
+            <div key={i} className="flex-1 flex flex-col items-center gap-2 h-full justify-end group">
+              <span className="text-xs font-mono font-medium text-ebony opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                {formatValue(value)}
+              </span>
+              <div className="w-full flex justify-center" style={{ height: `${Math.max(heightPct, 3)}%` }}>
+                <div
+                  className="w-full max-w-[40px] rounded-t-lg transition-all duration-500 opacity-70 group-hover:opacity-100"
+                  style={{ height: '100%', backgroundColor: '#3B341F' }}
+                />
+              </div>
+              <span className="text-xs text-sage shrink-0">
+                {month.short_month}
+              </span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

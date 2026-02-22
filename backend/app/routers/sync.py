@@ -26,7 +26,7 @@ async def process_emails(user_id: int, db: Session):
     gmail = GmailService(user.google_access_token, user.google_refresh_token)
     parser = EmailParser()
     instamart_filter = InstamrtFilter()
-    calorie_service = CalorieLookupService()
+    calorie_service = CalorieLookupService(db=db)
 
     # Fetch emails from Swiggy
     print(f"[SYNC] Fetching emails from {settings.swiggy_sender} after {settings.date_filter_start}")

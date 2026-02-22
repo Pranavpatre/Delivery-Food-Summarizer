@@ -163,31 +163,58 @@ class EmailParser:
         return None
 
     def _extract_order_date(self, soup: BeautifulSoup, subject: str) -> Optional[datetime]:
-        """Extract order date from email."""
+        """Extract order date and time from email."""
         text = soup.get_text()
 
         # Common date patterns
-        patterns = [
+        date_patterns = [
             r"(\d{1,2}[\s/-]\w{3,9}[\s/-]\d{2,4})",  # 12 Jan 2026, 12-Jan-2026
             r"(\w{3,9}\s+\d{1,2},?\s*\d{4})",  # January 12, 2026
             r"(\d{1,2}/\d{1,2}/\d{2,4})",  # 12/01/2026
         ]
 
-        for pattern in patterns:
+        order_date = None
+        for pattern in date_patterns:
             match = re.search(pattern, text)
             if match:
                 try:
                     date_str = match.group(1)
-                    # Try parsing with various formats
                     for fmt in ["%d %b %Y", "%d-%b-%Y", "%B %d, %Y", "%B %d %Y", "%d/%m/%Y", "%m/%d/%Y"]:
                         try:
-                            return datetime.strptime(date_str, fmt)
+                            order_date = datetime.strptime(date_str, fmt)
+                            break
+                        except ValueError:
+                            continue
+                    if order_date:
+                        break
+                except Exception:
+                    continue
+
+        # Try to extract time from email
+        time_patterns = [
+            r"(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))",  # 1:36 PM, 10:30 am
+            r"(?:ordered?\s*at|time)[:\s]*(\d{1,2}:\d{2}\s*(?:AM|PM|am|pm))",
+            r"(\d{1,2}:\d{2})\s*(?:hrs|hours)",  # 13:36 hrs
+        ]
+
+        for pattern in time_patterns:
+            match = re.search(pattern, text)
+            if match:
+                try:
+                    time_str = match.group(1).strip()
+                    for fmt in ["%I:%M %p", "%I:%M%p", "%H:%M"]:
+                        try:
+                            parsed_time = datetime.strptime(time_str, fmt)
+                            if order_date:
+                                order_date = order_date.replace(hour=parsed_time.hour, minute=parsed_time.minute)
+                            break
                         except ValueError:
                             continue
                 except Exception:
                     continue
+                break
 
-        return None
+        return order_date
 
     def _extract_dishes(self, soup: BeautifulSoup) -> list[dict]:
         """Extract dish names and quantities from email."""
@@ -298,6 +325,7 @@ Extract and return as JSON with this exact structure:
 {{
     "restaurant_name": "Restaurant Name",
     "order_date": "YYYY-MM-DD",
+    "order_time": "HH:MM (24-hour format, extract from email if available, null if not found)",
     "total_price": 450.00,
     "dishes": [
         {{"name": "Dish Name", "quantity": 1, "price": 200.00}},
@@ -330,11 +358,18 @@ Rules:
 
             data = json.loads(result_text)
 
-            # Parse date
+            # Parse date and time
             order_date = datetime.now()
             if data.get("order_date"):
                 try:
                     order_date = datetime.strptime(data["order_date"], "%Y-%m-%d")
+                except ValueError:
+                    pass
+            # Attach time if available
+            if data.get("order_time"):
+                try:
+                    parsed_time = datetime.strptime(data["order_time"], "%H:%M")
+                    order_date = order_date.replace(hour=parsed_time.hour, minute=parsed_time.minute)
                 except ValueError:
                     pass
 

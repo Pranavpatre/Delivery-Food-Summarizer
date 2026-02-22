@@ -10,7 +10,8 @@ from ..database import get_db
 from ..models import (
     User, Order, Dish, OrderResponse, DishResponse, CalendarDayData,
     CalendarMonthResponse, SummaryResponse, ExtendedSummaryResponse,
-    HealthInsightsResponse, EatMoreOfItem, DailyHealthScore, HealthInsightsCache
+    HealthInsightsResponse, HabitItem, DailyHealthScore, HealthInsightsCache,
+    NutrientLevel
 )
 from ..routers.auth import get_current_user
 from ..services.health_intelligence import HealthIntelligenceService
@@ -168,6 +169,8 @@ async def get_summary(
     dish_calories = {}  # Track calories per dish
     all_orders = []  # Collect all orders for health analysis
     daily_orders = defaultdict(list)  # Track orders by date for daily health scores
+    late_night_count = 0  # Orders after 10pm or before 5am
+    orders_with_time = 0  # Orders where we actually parsed the time
 
     # Calculate stats for each of the previous 6 months
     for i in range(1, 7):  # 1 month ago to 6 months ago
@@ -198,10 +201,19 @@ async def get_summary(
         # Count dish frequencies and collect for health analysis
         for order in orders:
             date_str = order.order_date.strftime("%Y-%m-%d")
+            order_hour = order.order_date.hour
             daily_orders[date_str].append({
                 "calories": order.total_calories or 0,
-                "dishes": [d.name for d in order.dishes]
+                "dishes": [d.name for d in order.dishes],
+                "hour": order_hour
             })
+            # Track late night orders (after 10pm or before 5am)
+            # Skip orders with exactly midnight time (00:00:00) - means time wasn't parsed
+            has_real_time = not (order.order_date.hour == 0 and order.order_date.minute == 0 and order.order_date.second == 0)
+            if has_real_time:
+                orders_with_time += 1
+                if order_hour >= 22 or order_hour < 5:
+                    late_night_count += 1
 
             for dish in order.dishes:
                 dish_name = dish.name.strip().lower()
@@ -252,6 +264,9 @@ async def get_summary(
     health_insights = None
     daily_health_scores = None
 
+    # Calculate late night order percentage
+    late_night_order_pct = (late_night_count / orders_with_time * 100) if orders_with_time > 0 else 0
+
     if total_order_count > 0:
         # Check cache first
         cached = db.query(HealthInsightsCache).filter(
@@ -262,12 +277,21 @@ async def get_summary(
             # Use cached insights
             try:
                 cached_data = json.loads(cached.health_insights_json)
+                # Parse nutrient levels from cache
+                cached_nutrients = cached_data.get("nutrient_levels", [])
+                nutrient_levels = [NutrientLevel(**n) for n in cached_nutrients] if cached_nutrients else None
+
                 health_insights = HealthInsightsResponse(
                     health_index=cached_data["health_index"],
                     one_liner=cached_data["one_liner"],
-                    eat_more_of=[EatMoreOfItem(**item) for item in cached_data["eat_more_of"]],
-                    lacking=cached_data["lacking"],
-                    monthly_narrative=cached_data["monthly_narrative"]
+                    good_habits=[HabitItem(**item) for item in cached_data.get("good_habits", [])],
+                    bad_habits=[HabitItem(**item) for item in cached_data.get("bad_habits", [])],
+                    lacking=cached_data.get("lacking", []),
+                    best_dishes=cached_data.get("best_dishes", []),
+                    worst_dishes=cached_data.get("worst_dishes", []),
+                    narrative=cached_data.get("narrative", ""),
+                    nutrient_levels=nutrient_levels,
+                    late_night_pct=late_night_order_pct
                 )
                 # Recalculate daily scores (they're cheap)
                 health_service = HealthIntelligenceService(db)
@@ -308,16 +332,33 @@ async def get_summary(
                 total_orders=total_order_count,
                 total_months=num_months,
                 avg_daily_calories=avg_daily_calories,
-                top_dishes=top_dishes
+                top_dishes=top_dishes,
+                late_night_order_pct=late_night_order_pct
             )
 
             if insights:
+                # Parse nutrient levels
+                nutrient_levels = None
+                if insights.nutrient_levels:
+                    nutrient_levels = [
+                        NutrientLevel(
+                            name=n.get("name", ""),
+                            level=n.get("level", "medium")
+                        ) if isinstance(n, dict) else NutrientLevel(name=str(n), level="medium")
+                        for n in insights.nutrient_levels
+                    ]
+
                 health_insights = HealthInsightsResponse(
                     health_index=insights.health_index,
                     one_liner=insights.one_liner,
-                    eat_more_of=[EatMoreOfItem(**item) if isinstance(item, dict) else EatMoreOfItem(item=str(item), is_healthy=False) for item in insights.eat_more_of],
+                    good_habits=[HabitItem(item=h.get("item", ""), detail=h.get("detail", "")) if isinstance(h, dict) else HabitItem(item=str(h), detail="") for h in insights.good_habits],
+                    bad_habits=[HabitItem(item=h.get("item", ""), detail=h.get("detail", "")) if isinstance(h, dict) else HabitItem(item=str(h), detail="") for h in insights.bad_habits],
                     lacking=insights.lacking,
-                    monthly_narrative=insights.monthly_narrative
+                    best_dishes=insights.best_dishes,
+                    worst_dishes=insights.worst_dishes,
+                    narrative=insights.narrative,
+                    nutrient_levels=nutrient_levels,
+                    late_night_pct=late_night_order_pct
                 )
 
                 # Calculate daily health scores
@@ -331,9 +372,13 @@ async def get_summary(
                 cache_data = {
                     "health_index": insights.health_index,
                     "one_liner": insights.one_liner,
-                    "eat_more_of": [{"item": item.item if hasattr(item, 'item') else item.get("item", ""), "is_healthy": item.is_healthy if hasattr(item, 'is_healthy') else item.get("is_healthy", False)} for item in insights.eat_more_of],
+                    "good_habits": [{"item": h.get("item", "") if isinstance(h, dict) else str(h), "detail": h.get("detail", "") if isinstance(h, dict) else ""} for h in insights.good_habits],
+                    "bad_habits": [{"item": h.get("item", "") if isinstance(h, dict) else str(h), "detail": h.get("detail", "") if isinstance(h, dict) else ""} for h in insights.bad_habits],
                     "lacking": insights.lacking,
-                    "monthly_narrative": insights.monthly_narrative
+                    "best_dishes": insights.best_dishes,
+                    "worst_dishes": insights.worst_dishes,
+                    "narrative": insights.narrative,
+                    "nutrient_levels": insights.nutrient_levels or []
                 }
 
                 if cached:
@@ -360,5 +405,6 @@ async def get_summary(
         top_dish=top_dish,
         top_dish_count=top_dish_count,
         health_insights=health_insights,
-        daily_health_scores=daily_health_scores
+        daily_health_scores=daily_health_scores,
+        late_night_order_pct=round(late_night_order_pct, 1)
     )

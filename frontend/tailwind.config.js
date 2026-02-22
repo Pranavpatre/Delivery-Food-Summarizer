@@ -7,16 +7,30 @@ export default {
   theme: {
     extend: {
       fontFamily: {
-        sans: ['Roboto', 'system-ui', 'sans-serif'],
-        heading: ['Montserrat', 'system-ui', 'sans-serif'],
+        heading: ['Syne', 'sans-serif'],
+        tagline: ['"Playfair Display"', 'serif'],
+        sans: ['"Cal Sans"', 'sans-serif'],
+        mono: ['"Roboto Mono"', 'monospace'],
       },
       colors: {
-        // Custom palette from coolors
-        dark: '#100B00',
-        lime: '#85CB33',
-        cream: '#EFFFC8',
-        sage: '#A5CBC3',
-        olive: '#3B341F',
+        ebony: '#0F0E0E',
+        linen: '#F5F1E3',
+        sage: '#6B7F67',
+        lime: '#84CC16',
+        amber: '#F59E0B',
+        bark: '#3B341F',
+      },
+      spacing: {
+        '18': '4.5rem',
+      },
+      animation: {
+        'fade-in': 'fadeIn 0.3s ease-out',
+      },
+      keyframes: {
+        fadeIn: {
+          '0%': { opacity: '0', transform: 'translateY(8px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
       },
     },
   },

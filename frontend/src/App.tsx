@@ -4,6 +4,7 @@ import type { User } from './types';
 import LoginPage from './components/LoginPage';
 import SummaryPage from './components/SummaryPage';
 import CalendarPage from './components/CalendarPage';
+import AdminPage from './components/AdminPage';
 
 interface AuthContextType {
   user: User | null;
@@ -81,13 +82,18 @@ function App() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-orange-50 to-orange-100">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-orange-500"></div>
+      <div className="min-h-screen flex items-center justify-center bg-linen">
+        <div className="animate-spin rounded-full h-12 w-12 border-2 border-lime border-t-transparent"></div>
       </div>
     );
   }
 
   const renderPage = () => {
+    // Check for admin page (accessible without auth)
+    if (window.location.pathname === '/admin') {
+      return <AdminPage />;
+    }
+
     if (!user) {
       return <LoginPage />;
     }

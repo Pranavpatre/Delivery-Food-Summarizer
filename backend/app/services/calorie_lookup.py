@@ -13,8 +13,11 @@ class CalorieLookupService:
     """
     Service to resolve calorie counts for dishes.
 
-    Primary: Web search for specific restaurant/dish combinations
-    Fallback: Claude estimation based on dish category and cuisine
+    Priority:
+    1. Cache lookup
+    2. API Ninjas nutrition API (verified data)
+    3. Web search for specific restaurant/dish combinations
+    4. Claude estimation based on dish category and cuisine
     """
 
     def __init__(self, db: Session = None):
@@ -44,6 +47,17 @@ class CalorieLookupService:
         if cached:
             return cached
 
+        # Try API Ninjas nutrition API (verified data)
+        api_result = await self._lookup_api_ninjas(dish_name)
+        if api_result and api_result.get("calories"):
+            self._save_to_cache(
+                dish_name, restaurant_name,
+                api_result["calories"],
+                api_result.get("source_url"),
+                is_estimated=False
+            )
+            return api_result
+
         # Try web search
         web_result = await self._search_web(dish_name, restaurant_name)
         if web_result and web_result.get("calories"):
@@ -72,6 +86,47 @@ class CalorieLookupService:
             "is_estimated": True,
             "source_url": None
         }
+
+    async def _lookup_api_ninjas(self, dish_name: str) -> Optional[dict]:
+        """
+        Look up nutrition data from API Ninjas.
+
+        Returns verified calorie data for common foods.
+        """
+        if not settings.api_ninjas_key:
+            return None
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(
+                    "https://api.api-ninjas.com/v1/nutrition",
+                    params={"query": dish_name},
+                    headers={"X-Api-Key": settings.api_ninjas_key},
+                    timeout=10.0
+                )
+
+                if response.status_code != 200:
+                    print(f"API Ninjas error: {response.status_code}")
+                    return None
+
+                data = response.json()
+
+                if data and len(data) > 0:
+                    # API returns array of items, sum up calories if multiple
+                    total_calories = sum(item.get("calories", 0) for item in data)
+                    if total_calories > 0:
+                        print(f"[API Ninjas] Found {dish_name}: {total_calories} kcal")
+                        return {
+                            "calories": total_calories,
+                            "is_estimated": False,
+                            "source_url": "https://api-ninjas.com/api/nutrition"
+                        }
+
+                return None
+
+        except Exception as e:
+            print(f"API Ninjas error: {e}")
+            return None
 
     def _check_cache(self, dish_name: str, restaurant_name: str = None) -> Optional[dict]:
         """Check if we have cached calorie data."""

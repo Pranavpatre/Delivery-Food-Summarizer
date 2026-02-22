@@ -159,19 +159,34 @@ class SummaryResponse(BaseModel):
 
 # Health Intelligence Models
 
-class EatMoreOfItem(BaseModel):
-    """Item in the 'eat more of' list with health indicator."""
+class HabitItem(BaseModel):
+    """Item representing a good or bad habit."""
     item: str
-    is_healthy: bool
+    detail: str
+
+
+class NutrientLevel(BaseModel):
+    """Nutrient level with rating."""
+    name: str
+    level: str  # "high", "medium", "low"
+    icon: str = ""
 
 
 class HealthInsightsResponse(BaseModel):
-    """Health intelligence insights."""
+    """Health intelligence insights based on nutritional science."""
     health_index: int  # 0-100
     one_liner: str
-    eat_more_of: list[EatMoreOfItem]
-    lacking: list[str]
-    monthly_narrative: str
+    good_habits: list[HabitItem]  # Good things being consumed
+    bad_habits: list[HabitItem]   # Unhealthy things being consumed
+    lacking: list[str]            # Nutrients/foods missing from diet
+    best_dishes: list[str]        # Healthiest dishes ordered
+    worst_dishes: list[str]       # Unhealthiest dishes ordered
+    narrative: str                # Second person narrative
+    # New fields for enhanced insights
+    nutrient_levels: Optional[list[NutrientLevel]] = None  # Macro/micro levels
+    late_night_pct: Optional[float] = None  # % of orders after 9pm
+    low_nutrition_spend: Optional[float] = None  # Money on low-nutrition food
+    high_nutrition_spend: Optional[float] = None  # Money on nutrient-dense food
 
 
 class DailyHealthScore(BaseModel):
@@ -184,3 +199,4 @@ class ExtendedSummaryResponse(SummaryResponse):
     """Extended summary with health intelligence."""
     health_insights: Optional[HealthInsightsResponse] = None
     daily_health_scores: Optional[list[DailyHealthScore]] = None
+    late_night_order_pct: Optional[float] = None  # Late night ordering percentage

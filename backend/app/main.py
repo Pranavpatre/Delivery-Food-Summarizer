@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 from .config import get_settings
 from .database import init_db
-from .routers import auth, sync, calendar
+from .routers import auth, sync, calendar, admin
 
 settings = get_settings()
 
@@ -45,6 +45,7 @@ app.add_middleware(
 app.include_router(auth.router, prefix="/auth", tags=["Authentication"])
 app.include_router(sync.router, prefix="/api", tags=["Sync"])
 app.include_router(calendar.router, prefix="/api", tags=["Calendar"])
+app.include_router(admin.router, prefix="/admin", tags=["Admin"])
 
 
 @app.get("/")

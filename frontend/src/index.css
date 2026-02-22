@@ -2,23 +2,31 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen,
-    Ubuntu, Cantarell, 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
+@layer base {
+  html { font-size: 16px; }
+  body {
+    @apply text-ebony font-sans leading-6;
+    background-color: #F5F1E3;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  h1, h2, h3 { @apply font-heading tracking-tight leading-tight; }
+  h1 { @apply text-4xl md:text-5xl; }
+  h2 { @apply text-2xl md:text-3xl; }
+  h3 { @apply text-xl md:text-2xl; }
 }
 
 @layer components {
-  .btn-primary {
-    @apply bg-primary-500 hover:bg-primary-600 text-white font-semibold py-2 px-4 rounded-lg transition-colors;
-  }
-
-  .btn-secondary {
-    @apply bg-gray-200 hover:bg-gray-300 text-gray-800 font-semibold py-2 px-4 rounded-lg transition-colors;
-  }
-
   .card {
-    @apply bg-white rounded-xl shadow-sm border border-gray-100;
+    @apply bg-white border border-sage/20 rounded-2xl shadow-sm p-6 transition-shadow hover:shadow-md;
+  }
+  .btn-primary {
+    @apply bg-lime text-ebony font-semibold py-3 px-6 rounded-xl transition-all duration-300 hover:bg-lime/90 focus:outline-none focus:ring-2 focus:ring-lime/50;
+  }
+  .btn-secondary {
+    @apply border border-sage text-sage hover:bg-sage/10 py-2 px-4 rounded-lg transition-colors;
+  }
+  .metric {
+    @apply text-3xl md:text-4xl font-mono font-bold tracking-wide;
   }
 }
