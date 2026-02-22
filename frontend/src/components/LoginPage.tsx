@@ -31,6 +31,9 @@ function LoginPage() {
             <p className="font-tagline text-ebony text-base md:text-lg italic leading-relaxed">
               Zero-effort nutrition tracking for your Swiggy food orders
             </p>
+            <p className="text-ebony/50 text-xs tracking-wide">
+              Based on the globally accepted 5-CNL nutrition rating system
+            </p>
           </div>
 
           {/* CTA */}

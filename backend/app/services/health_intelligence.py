@@ -1,11 +1,12 @@
 """
 Health Intelligence Service
 
-Analyzes food ordering patterns and generates health insights using Claude.
-Based on comprehensive nutritional science principles.
+Computes a deterministic Health Index based on the 5-CNL (Nutri-Score) system,
+then uses Claude for qualitative insights (good/bad habits, narrative, etc.).
 """
 
 import json
+import re
 import anthropic
 from typing import Optional
 from dataclasses import dataclass
@@ -14,6 +15,195 @@ from sqlalchemy.orm import Session
 from ..config import get_settings
 
 settings = get_settings()
+
+
+# ---------------------------------------------------------------------------
+# Nutri-Score category keyword dictionaries (Indian food delivery context)
+# Each dish is classified into one of 5 categories based on keyword matching.
+# Raw scores map to the adapted Nutri-Score scale (-15 to +40).
+# ---------------------------------------------------------------------------
+
+# Category A — Excellent (raw score ~ -7)
+_CAT_A_KEYWORDS = [
+    'grilled', 'steamed', 'tandoori', 'tikka', 'salad', 'bowl',
+    'dal', 'daal', 'dhal', 'lentil', 'rasam', 'sambar', 'sambhar',
+    'idli', 'appam', 'ragi', 'millet', 'oats', 'quinoa',
+    'grilled chicken', 'grilled fish', 'grilled paneer',
+    'boiled egg', 'egg white', 'poha', 'upma',
+    'sprout', 'raita', 'curd', 'yogurt', 'buttermilk', 'chaas',
+    'soup', 'clear soup', 'multigrain',
+    'chapati', 'roti', 'phulka', 'whole wheat',
+    'brown rice', 'steamed rice',
+]
+
+# Category B — Good (raw score ~ +3)
+_CAT_B_KEYWORDS = [
+    'biryani', 'pulao', 'rice bowl', 'curry', 'sabzi', 'subzi',
+    'thali', 'meals', 'combo meal',
+    'stir fry', 'stir-fry', 'sauteed', 'tawa',
+    'egg', 'omelette', 'omelet', 'bhurji',
+    'thin crust', 'pita', 'wrap', 'roll',
+    'paneer', 'tofu', 'chicken', 'fish', 'prawn', 'shrimp',
+    'kebab', 'seekh', 'malai',
+    'rajma', 'chole', 'chana', 'chickpea',
+    'mushroom', 'palak', 'spinach', 'methi',
+    'dosa', 'uttapam', 'pesarattu',
+]
+
+# Category C — Moderate (raw score ~ +12)
+_CAT_C_KEYWORDS = [
+    'butter chicken', 'butter paneer', 'butter masala',
+    'cream', 'creamy', 'korma', 'shahi',
+    'naan', 'garlic naan', 'kulcha', 'paratha', 'parantha',
+    'fried rice', 'hakka noodle', 'chow mein', 'lo mein',
+    'thick crust', 'regular pizza',
+    'burger', 'sandwich', 'sub',
+    'pasta', 'penne', 'spaghetti', 'alfredo',
+    'manchurian', 'gobi manchurian', 'schezwan',
+    'momos', 'dumpling', 'spring roll',
+    'white rice', 'jeera rice',
+    'kadhai', 'kadai', 'karahi',
+    'tikka masala', 'masala dosa',
+]
+
+# Category D — Poor (raw score ~ +25)
+_CAT_D_KEYWORDS = [
+    'fried', 'deep fried', 'deep-fried',
+    'pakora', 'pakoda', 'bhajia', 'bhaji',
+    'samosa', 'kachori', 'vada', 'bonda',
+    'crispy', 'crunchy', 'golden fried',
+    'french fries', 'fries', 'loaded fries', 'peri peri fries',
+    'fried chicken', 'chicken wings', 'wings',
+    'nuggets', 'popcorn chicken', 'strips',
+    'nachos', 'loaded nachos',
+    'puri', 'poori', 'bhatura', 'chole bhature',
+    'chilli chicken', 'chilli paneer', 'dragon chicken',
+    'hot dog', 'sausage',
+]
+
+# Category E — Very Poor (raw score ~ +37)
+_CAT_E_KEYWORDS = [
+    'dessert', 'ice cream', 'gelato', 'sundae',
+    'cake', 'pastry', 'brownie', 'cookie',
+    'waffle', 'pancake', 'crepe',
+    'gulab jamun', 'rasgulla', 'rasmalai', 'jalebi',
+    'kheer', 'halwa', 'barfi', 'ladoo', 'laddu',
+    'mithai', 'sweet', 'payasam',
+    'chocolate', 'mousse', 'tiramisu', 'cheesecake',
+    'milkshake', 'shake', 'frappe', 'smoothie',
+    'cold coffee', 'iced coffee', 'frappuccino',
+    'soda', 'cola', 'pepsi', 'coke', 'fizz',
+    'mojito', 'cooler', 'slush',
+    'donut', 'doughnut', 'churro',
+]
+
+# Raw scores for each category (Nutri-Score adapted)
+_CATEGORY_RAW_SCORES = {
+    'A': -7,   # Excellent
+    'B': 3,    # Good
+    'C': 12,   # Moderate
+    'D': 25,   # Poor
+    'E': 37,   # Very Poor
+}
+
+# Default for unclassified dishes
+_DEFAULT_RAW_SCORE = 10  # between B and C
+
+
+def _classify_dish(dish_name: str) -> str:
+    """Classify a dish into Nutri-Score category A-E based on keywords."""
+    name_lower = dish_name.lower().strip()
+
+    # Check categories from worst to best — but we want best match wins,
+    # so check most specific (E/D) first, then fall through to healthier categories.
+    # However, a "grilled chicken salad" should be A, not D (because of 'chicken').
+    # Strategy: check E first, then D, then A, B, C — worst trumps for bad items,
+    # but healthy preparation methods (grilled, steamed) override.
+
+    # First check: healthy preparation methods → always Category A
+    healthy_preps = ['grilled', 'steamed', 'boiled', 'baked', 'tandoori', 'salad', 'soup']
+    if any(kw in name_lower for kw in healthy_preps):
+        return 'A'
+
+    # Check E (desserts/sugary) — these are unambiguous
+    for kw in _CAT_E_KEYWORDS:
+        if kw in name_lower:
+            return 'E'
+
+    # Check D (fried/deep-fried)
+    for kw in _CAT_D_KEYWORDS:
+        if kw in name_lower:
+            return 'D'
+
+    # Check A (healthy staples)
+    for kw in _CAT_A_KEYWORDS:
+        if kw in name_lower:
+            return 'A'
+
+    # Check B (good options)
+    for kw in _CAT_B_KEYWORDS:
+        if kw in name_lower:
+            return 'B'
+
+    # Check C (moderate)
+    for kw in _CAT_C_KEYWORDS:
+        if kw in name_lower:
+            return 'C'
+
+    # Default: moderate (between B and C)
+    return 'C'
+
+
+def compute_health_index(
+    dishes_with_frequency: list[dict],
+    late_night_order_pct: float = 0.0,
+    avg_daily_calories: float = 0.0
+) -> tuple[int, dict]:
+    """
+    Compute a deterministic health index (0-100) based on Nutri-Score categories.
+
+    Returns:
+        (health_index, category_breakdown) where category_breakdown has counts per category.
+    """
+    if not dishes_with_frequency:
+        return 50, {}
+
+    total_weighted_score = 0.0
+    total_count = 0
+    category_counts = {'A': 0, 'B': 0, 'C': 0, 'D': 0, 'E': 0}
+    dish_categories = []
+
+    for dish in dishes_with_frequency:
+        name = dish.get("name", "")
+        count = dish.get("count", 1)
+        category = _classify_dish(name)
+        raw_score = _CATEGORY_RAW_SCORES[category]
+
+        total_weighted_score += raw_score * count
+        total_count += count
+        category_counts[category] += count
+        dish_categories.append((name, category, count))
+
+    if total_count == 0:
+        return 50, category_counts
+
+    avg_raw_score = total_weighted_score / total_count
+
+    # Convert raw score (-15 to +40) → health index (0-100, higher = better)
+    # Formula: health_index = 100 - ((raw_score + 15) * 100 / 55)
+    health_index = 100 - ((avg_raw_score + 15) * 100 / 55)
+
+    # Late night penalty: -5 if >20% of orders are after 10pm
+    if late_night_order_pct > 20:
+        health_index -= 5
+
+    # Excessive calorie penalty: -5 if avg daily calories on order days > 2500
+    if avg_daily_calories > 2500:
+        health_index -= 5
+
+    health_index = max(0, min(100, round(health_index)))
+
+    return health_index, category_counts
 
 
 @dataclass
@@ -32,14 +222,8 @@ class HealthInsights:
 
 class HealthIntelligenceService:
     """
-    Service for generating health insights using Claude.
-
-    Analyzes dish patterns based on nutritional science:
-    - Macronutrients (protein, carbs, fats)
-    - Fiber intake
-    - Sugar content
-    - Processed vs whole foods
-    - Meal timing
+    Computes health index deterministically using Nutri-Score category proxies,
+    then uses Claude for qualitative insights.
     """
 
     def __init__(self, db: Session = None):
@@ -57,29 +241,48 @@ class HealthIntelligenceService:
         top_dishes: list[str],
         late_night_order_pct: float = 0.0
     ) -> Optional[HealthInsights]:
-        """
-        Generate comprehensive health insights from ordering data.
-
-        Args:
-            dishes_with_frequency: List of {"name": str, "count": int, "calories": float}
-            total_orders: Total number of orders in the period
-            total_months: Number of months analyzed
-            avg_daily_calories: Average calories on days with orders
-            top_dishes: Top 5 most ordered dishes
-            late_night_order_pct: Percentage of orders after 10pm
-
-        Returns:
-            HealthInsights object with all analysis
-        """
-        if not self.anthropic_client or not dishes_with_frequency:
+        """Generate health insights with deterministic health index + Claude qualitative analysis."""
+        if not dishes_with_frequency:
             return None
 
+        # Step 1: Compute health index deterministically
+        health_index, category_counts = compute_health_index(
+            dishes_with_frequency,
+            late_night_order_pct,
+            avg_daily_calories
+        )
+
+        # Step 2: Use Claude for qualitative insights (if available)
+        if not self.anthropic_client:
+            return HealthInsights(
+                health_index=health_index,
+                one_liner="Health analysis requires AI configuration",
+                good_habits=[],
+                bad_habits=[],
+                lacking=["Unable to analyze without AI"],
+                best_dishes=[],
+                worst_dishes=[],
+                narrative="Configure Anthropic API key for detailed insights.",
+                nutrient_levels=[]
+            )
+
         try:
-            # Format dish data for the prompt
             dish_summary = self._format_dish_summary(dishes_with_frequency)
             top_dishes_str = ", ".join(top_dishes[:5]) if top_dishes else "No data"
 
+            # Build category breakdown string
+            cat_breakdown = ", ".join(
+                f"Category {cat}: {cnt} dishes"
+                for cat, cnt in category_counts.items() if cnt > 0
+            )
+
             prompt = f"""You are a nutritionist analyzing someone's food delivery ordering patterns from Swiggy (Indian food delivery app).
+
+The Health Index has ALREADY been calculated as {health_index}/100 using the 5-CNL nutrition rating system.
+DO NOT recalculate or change this score. Use it as-is in your response.
+
+CATEGORY BREAKDOWN: {cat_breakdown}
+(A=Excellent, B=Good, C=Moderate, D=Poor, E=Very Poor)
 
 DATA SUMMARY:
 - Total orders: {total_orders} over {total_months} months
@@ -87,43 +290,22 @@ DATA SUMMARY:
 - Top ordered dishes: {top_dishes_str}
 - Late night orders (after 10pm): {late_night_order_pct:.0f}%
 
-DISH FREQUENCY DATA (analyze these actual orders):
+DISH FREQUENCY DATA:
 {dish_summary}
 
-ANALYZE BASED ON THESE NUTRITIONAL CATEGORIES:
-
-1. MACRONUTRIENTS:
-   - PROTEIN: dal, paneer, chicken, eggs, fish, soya, tofu, legumes
-   - CARBS: whole grains (chapati, roti, brown rice) = good; refined (naan, white rice, maida, bread) = bad
-   - FATS: healthy (nuts, ghee in moderation) = good; fried/trans fats = bad
-
+NUTRITIONAL CATEGORIES FOR ANALYSIS:
+1. PROTEIN: dal, paneer, chicken, eggs, fish, soya, tofu, legumes
 2. FIBER: vegetables, salads, dal, whole grains, fruits
-
-3. MICRONUTRIENTS (vitamins, minerals): fruits, vegetables, leafy greens
-
-4. PROBLEM FOODS:
-   - FRIED: vada, pakora, samosa, french fries, fried rice, crispy items
-   - PROCESSED: burgers, pizza, instant noodles, packaged snacks
-   - HIGH SUGAR: desserts, sweetened drinks, mithai
-   - REFINED CARBS: naan, white bread, maida items
-
-5. MEAL TIMING: Late night orders (after 10pm) = poor for digestion
-
-HEALTH INDEX SCORING (0-100):
-- Start at 50 (baseline)
-- Protein sources present: +15
-- Fiber/vegetables present: +15
-- Whole grains present: +10
-- Variety of food groups: +10
-- Fried foods frequent: -15
-- Processed foods frequent: -10
-- High sugar items: -10
-- Late night orders >20%: -5
+3. WHOLE GRAINS: chapati, roti, brown rice, millets
+4. PROBLEM - FRIED: vada, pakora, samosa, fries, crispy items
+5. PROBLEM - PROCESSED: burgers, pizza, instant noodles
+6. PROBLEM - HIGH SUGAR: desserts, sweetened drinks, mithai
+7. PROBLEM - REFINED CARBS: naan, white bread, maida items
 
 Provide analysis in this EXACT JSON format:
 
 {{
-  "health_index": <0-100 calculated score>,
+  "health_index": {health_index},
   "one_liner": "<Impactful summary under 60 chars>",
   "good_habits": [
     {{"item": "<Macro/nutrient category>", "detail": "<Actual dish names from their orders>"}},
@@ -148,16 +330,15 @@ Provide analysis in this EXACT JSON format:
 }}
 
 CRITICAL REQUIREMENTS:
-1. good_habits: Use categories like "Protein intake", "Fiber from dal", "Whole grains". Detail must have ACTUAL dish names from their orders.
-2. bad_habits: Use categories like "Fried foods", "Refined carbs", "High sugar", "Processed foods". Detail must have ACTUAL dish names.
-3. lacking: Be SPECIFIC - use terms like "Fiber", "Protein", "Vegetables", "Fruits", "Iron", "Vitamin C", "Leafy greens", "Complex carbs"
-4. best_dishes: Pick 2-3 EXACT dish names from their order data that are healthiest
-5. worst_dishes: Pick 2-3 EXACT dish names from their order data that are least healthy
-6. narrative: MUST be second person ("You consume...", "Your diet shows...")
-7. nutrient_levels: Assess each nutrient as "high", "medium", or "low" based on dishes ordered
-8. If no good habits found, still provide empty array []
-9. If no bad habits found, still provide empty array []
-10. ALWAYS provide at least 2 items in lacking - everyone has nutritional gaps
+1. health_index MUST be exactly {health_index} — do not change it
+2. good_habits: Detail must have ACTUAL dish names from their orders
+3. bad_habits: Detail must have ACTUAL dish names from their orders
+4. lacking: Be SPECIFIC — "Fiber", "Protein", "Vegetables", "Fruits", etc.
+5. best_dishes: Pick 2-3 EXACT dish names from their order data that are healthiest
+6. worst_dishes: Pick 2-3 EXACT dish names from their order data that are least healthy
+7. narrative: MUST be second person ("You consume...", "Your diet shows...")
+8. nutrient_levels: Assess each as "high", "medium", or "low"
+9. ALWAYS provide at least 2 items in lacking
 
 Return ONLY valid JSON, no other text."""
 
@@ -167,10 +348,9 @@ Return ONLY valid JSON, no other text."""
                 messages=[{"role": "user", "content": prompt}]
             )
 
-            # Parse JSON response
             result_text = response.content[0].text.strip()
 
-            # Clean up response if needed (remove markdown code blocks)
+            # Clean up markdown code blocks if present
             if result_text.startswith("```"):
                 result_text = result_text.split("```")[1]
                 if result_text.startswith("json"):
@@ -181,7 +361,7 @@ Return ONLY valid JSON, no other text."""
             data = json.loads(result_text.strip())
 
             return HealthInsights(
-                health_index=min(100, max(0, int(data.get("health_index", 50)))),
+                health_index=health_index,  # Always use our computed score
                 one_liner=data.get("one_liner", "")[:80],
                 good_habits=data.get("good_habits", []),
                 bad_habits=data.get("bad_habits", []),
@@ -195,44 +375,55 @@ Return ONLY valid JSON, no other text."""
         except json.JSONDecodeError as e:
             print(f"Health insights JSON parse error: {e}")
             print(f"Raw response: {result_text[:500] if 'result_text' in dir() else 'N/A'}")
-            return None
+            # Return with deterministic score even if Claude fails
+            return HealthInsights(
+                health_index=health_index,
+                one_liner="Analysis partially available",
+                good_habits=[],
+                bad_habits=[],
+                lacking=[],
+                best_dishes=[],
+                worst_dishes=[],
+                narrative="",
+                nutrient_levels=[]
+            )
         except Exception as e:
             print(f"Health insights generation error: {e}")
-            return None
+            return HealthInsights(
+                health_index=health_index,
+                one_liner="Analysis partially available",
+                good_habits=[],
+                bad_habits=[],
+                lacking=[],
+                best_dishes=[],
+                worst_dishes=[],
+                narrative="",
+                nutrient_levels=[]
+            )
 
     def _format_dish_summary(self, dishes: list[dict]) -> str:
         """Format dish data for the prompt."""
         lines = []
-        # Sort by frequency
         sorted_dishes = sorted(dishes, key=lambda x: x.get("count", 0), reverse=True)
 
-        for dish in sorted_dishes[:30]:  # Top 30 dishes
+        for dish in sorted_dishes[:30]:
             name = dish.get("name", "Unknown")
             count = dish.get("count", 0)
             calories = dish.get("calories", 0)
-            lines.append(f"- {name}: ordered {count}x, ~{calories:.0f} kcal each")
+            category = _classify_dish(name)
+            lines.append(f"- {name}: ordered {count}x, ~{calories:.0f} kcal each [Cat {category}]")
 
         return "\n".join(lines) if lines else "No dish data available"
 
     def calculate_daily_health_scores(
         self,
-        daily_orders: dict,  # {date_str: [{"dishes": [...], "calories": float, "hour": int}, ...]}
+        daily_orders: dict,
         base_health_index: int
     ) -> list[dict]:
         """
         Calculate health scores for each day based on what was ordered.
 
-        Factors:
-        - Calorie levels (high = penalty)
-        - Late night ordering (after 10pm = penalty)
-        - Dish types (fried items = penalty)
-
-        Args:
-            daily_orders: Dictionary mapping dates to order data
-            base_health_index: The overall health index for the period
-
-        Returns:
-            List of {"date": str, "health_index": int}
+        Uses the same Nutri-Score category system for per-day scoring.
         """
         if not daily_orders:
             return []
@@ -245,9 +436,6 @@ Return ONLY valid JSON, no other text."""
             for orders in daily_orders.values()
         )
         avg_calories = total_calories / len(daily_orders) if daily_orders else 0
-
-        # Fried food keywords
-        fried_keywords = ['vada', 'pakora', 'samosa', 'fries', 'fried', 'crispy', 'crunchy']
 
         for date_str, orders in daily_orders.items():
             day_calories = sum(order.get("calories", 0) for order in orders)
@@ -266,17 +454,20 @@ Return ONLY valid JSON, no other text."""
             # Late night adjustment
             for order in orders:
                 hour = order.get("hour", 12)
-                if hour >= 22 or hour < 5:  # After 10pm or before 5am
+                if hour >= 22 or hour < 5:
                     adjustment -= 10
                     break
 
-            # Fried food adjustment
+            # Dish category adjustment (per-day)
             for order in orders:
                 dishes = order.get("dishes", [])
-                for dish in dishes:
-                    dish_lower = dish.lower()
-                    if any(kw in dish_lower for kw in fried_keywords):
+                for dish_name in dishes:
+                    cat = _classify_dish(dish_name)
+                    if cat == 'D':
                         adjustment -= 5
+                        break
+                    elif cat == 'E':
+                        adjustment -= 8
                         break
 
             day_score = max(0, min(100, base_health_index + adjustment))
