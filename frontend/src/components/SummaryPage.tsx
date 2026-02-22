@@ -140,7 +140,7 @@ function SummaryPage({ onGoToCalendar }: SummaryPageProps) {
       <main className="max-w-4xl mx-auto px-6 py-12 space-y-12">
         {/* Hero Title */}
         <div className="text-center space-y-2 animate-fade-in">
-          <h2 className="font-heading text-3xl font-black text-ebony">Order Health Summary</h2>
+          <h2 className="font-heading text-4xl font-black text-ebony uppercase">Order Health Summary</h2>
           <p className="text-sage">Last 6 months of Swiggy orders</p>
         </div>
 

@@ -25,7 +25,7 @@ function LoginPage() {
         <div className="w-full flex flex-col items-center space-y-10 animate-fade-in">
           {/* Tagline */}
           <div className="space-y-4 text-center">
-            <h1 className="font-heading text-5xl md:text-6xl font-extrabold text-ebony leading-none tracking-tight">
+            <h1 className="font-heading text-6xl md:text-7xl font-bold text-ebony leading-none tracking-tight uppercase">
               Order Smarter.
             </h1>
             <p className="font-tagline text-ebony/60 text-base md:text-lg italic leading-relaxed">
