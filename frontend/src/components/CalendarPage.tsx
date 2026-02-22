@@ -147,7 +147,7 @@ function CalendarPage({ onGoToSummary }: CalendarPageProps) {
                 </svg>
               </button>
             )}
-            <span className="text-2xl">🍽️</span>
+            <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" stroke="white" strokeWidth="5"/><circle cx="50" cy="50" r="35" stroke="white" strokeWidth="3"/><path d="M35 52 L45 62 L65 40" stroke="#84CC16" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/></svg>
             <h1 className="font-heading text-xl font-black">Bitewise</h1>
           </div>
           <div className="flex items-center gap-4 text-sm">

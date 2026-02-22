@@ -15,7 +15,7 @@ function LoginPage() {
       {/* Header */}
       <header className="w-full px-8 py-5 bg-ebony">
         <div className="flex items-center gap-2">
-          <span className="text-2xl">🍽️</span>
+          <svg width="32" height="32" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" stroke="white" strokeWidth="5"/><circle cx="50" cy="50" r="35" stroke="white" strokeWidth="3"/><path d="M35 52 L45 62 L65 40" stroke="#84CC16" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/></svg>
           <span className="font-heading text-3xl font-bold text-white tracking-tight">Bitewise</span>
         </div>
       </header>

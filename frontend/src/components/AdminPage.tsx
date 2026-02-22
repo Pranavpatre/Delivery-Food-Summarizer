@@ -73,7 +73,7 @@ function AdminPage() {
       {/* Header */}
       <header className="bg-ebony text-linen px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center gap-3">
-          <span className="text-2xl">🍽️</span>
+          <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg"><circle cx="50" cy="50" r="45" stroke="white" strokeWidth="5"/><circle cx="50" cy="50" r="35" stroke="white" strokeWidth="3"/><path d="M35 52 L45 62 L65 40" stroke="#84CC16" strokeWidth="7" strokeLinecap="round" strokeLinejoin="round"/></svg>
           <h1 className="font-heading text-xl font-black">Bitewise Admin</h1>
         </div>
       </header>
