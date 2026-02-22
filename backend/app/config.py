@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     # Search API
     serpapi_key: str = ""
 
+    # API Ninjas (verified nutrition data)
+    api_ninjas_key: str = ""
+
     # Anthropic API
     anthropic_api_key: str = ""
 
