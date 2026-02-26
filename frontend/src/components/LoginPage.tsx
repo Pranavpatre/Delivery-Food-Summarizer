@@ -2,7 +2,6 @@ import { useState } from 'react';
 import { authApi } from '../api/client';
 
 function LoginPage() {
-  const [showPrivacy, setShowPrivacy] = useState(false);
   const [isRedirecting, setIsRedirecting] = useState(false);
 
   const handleGoogleLogin = () => {
@@ -87,50 +86,11 @@ function LoginPage() {
           <span>👁 Read-only</span>
           <span>🔒 Private</span>
         </div>
-        <button
-          onClick={() => setShowPrivacy(true)}
-          className="w-full text-center text-xs text-ebony/30 hover:text-ebony/60 transition-colors"
-        >
-          How we handle your data →
-        </button>
-      </footer>
-
-      {/* Privacy Modal */}
-      {showPrivacy && (
-        <div className="fixed inset-0 bg-ebony/50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full max-h-[80vh] overflow-y-auto shadow-2xl">
-            <div className="p-6 space-y-6">
-              <div className="flex justify-between items-center">
-                <h2 className="font-heading text-xl font-black text-ebony">Data Privacy</h2>
-                <button
-                  onClick={() => setShowPrivacy(false)}
-                  className="text-sage hover:text-ebony text-xl transition-colors"
-                >
-                  ×
-                </button>
-              </div>
-              <div className="space-y-4 text-sm text-ebony leading-relaxed">
-                <p>
-                  <strong>Purpose:</strong> Extract Swiggy orders for your personal insights only.
-                </p>
-                <ul className="space-y-2 list-disc list-inside text-ebony/80">
-                  <li>Access: Read-only Gmail (Swiggy emails filtered automatically).</li>
-                  <li>Stored: Order details only (no full emails).</li>
-                  <li>Not done: Sell/share data, ads, or training.</li>
-                  <li>Revoke: Google Account → Security → Third-party apps.</li>
-                </ul>
-                <p className="text-sage text-xs">Compliant with Google API policies.</p>
-              </div>
-              <button
-                onClick={() => setShowPrivacy(false)}
-                className="w-full btn-secondary"
-              >
-                Got it
-              </button>
-            </div>
-          </div>
+        <div className="flex justify-center gap-6 text-xs">
+          <a href="/privacy" className="text-ebony/30 hover:text-ebony/60 transition-colors">Privacy Policy</a>
+          <a href="/terms" className="text-ebony/30 hover:text-ebony/60 transition-colors">Terms of Service</a>
         </div>
-      )}
+      </footer>
     </div>
   );
 }
