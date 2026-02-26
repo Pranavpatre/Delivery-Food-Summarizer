@@ -109,10 +109,52 @@ _CATEGORY_RAW_SCORES = {
 # Default for unclassified dishes
 _DEFAULT_RAW_SCORE = 10  # between B and C
 
+# Restaurant-based category floors: dishes from these restaurants
+# can never be rated better than the specified category.
+# This prevents "Veggie Feast" from Pizza Hut being rated as healthy.
+_RESTAURANT_CATEGORY_FLOORS = {
+    # Pizza chains → minimum Category C
+    'pizza hut': 'C',
+    'dominos': 'C',
+    "domino's": 'C',
+    'papa johns': 'C',
+    "papa john's": 'C',
+    'pizza express': 'C',
+    'la pino': 'C',
+    "la pinoz": 'C',
+    'oven story': 'C',
+    'mojo pizza': 'C',
+    # Burger/fast food chains → minimum Category C
+    'mcdonalds': 'C',
+    "mcdonald's": 'C',
+    'burger king': 'C',
+    'kfc': 'D',
+    'popeyes': 'D',
+    "wendy's": 'C',
+    'subway': 'C',
+    'taco bell': 'C',
+    # Indian fast food / fried heavy
+    'faasos': 'C',
+    'behrouz biryani': 'C',
+    'box8': 'C',
+    'rebel foods': 'C',
+    'wok express': 'C',
+    # Dessert / ice cream chains → minimum Category E
+    'baskin robbins': 'E',
+    'keventers': 'E',
+    'natural ice cream': 'E',
+    'cream stone': 'E',
+    'rolls mania': 'D',
+}
 
-def _classify_dish(dish_name: str) -> str:
-    """Classify a dish into Nutri-Score category A-E based on keywords."""
+# Category ordering for floor comparison (A=best, E=worst)
+_CATEGORY_ORDER = {'A': 0, 'B': 1, 'C': 2, 'D': 3, 'E': 4}
+
+
+def _classify_dish(dish_name: str, restaurant_name: str = "") -> str:
+    """Classify a dish into Nutri-Score category A-E based on keywords and restaurant context."""
     name_lower = dish_name.lower().strip()
+    restaurant_lower = restaurant_name.lower().strip() if restaurant_name else ""
 
     # Check categories from worst to best — but we want best match wins,
     # so check most specific (E/D) first, then fall through to healthier categories.
@@ -123,35 +165,36 @@ def _classify_dish(dish_name: str) -> str:
     # First check: healthy preparation methods → always Category A
     healthy_preps = ['grilled', 'steamed', 'boiled', 'baked', 'tandoori', 'salad', 'soup']
     if any(kw in name_lower for kw in healthy_preps):
-        return 'A'
-
+        category = 'A'
     # Check E (desserts/sugary) — these are unambiguous
-    for kw in _CAT_E_KEYWORDS:
-        if kw in name_lower:
-            return 'E'
-
+    elif any(kw in name_lower for kw in _CAT_E_KEYWORDS):
+        category = 'E'
     # Check D (fried/deep-fried)
-    for kw in _CAT_D_KEYWORDS:
-        if kw in name_lower:
-            return 'D'
-
+    elif any(kw in name_lower for kw in _CAT_D_KEYWORDS):
+        category = 'D'
     # Check A (healthy staples)
-    for kw in _CAT_A_KEYWORDS:
-        if kw in name_lower:
-            return 'A'
-
+    elif any(kw in name_lower for kw in _CAT_A_KEYWORDS):
+        category = 'A'
     # Check B (good options)
-    for kw in _CAT_B_KEYWORDS:
-        if kw in name_lower:
-            return 'B'
-
+    elif any(kw in name_lower for kw in _CAT_B_KEYWORDS):
+        category = 'B'
     # Check C (moderate)
-    for kw in _CAT_C_KEYWORDS:
-        if kw in name_lower:
-            return 'C'
+    elif any(kw in name_lower for kw in _CAT_C_KEYWORDS):
+        category = 'C'
+    else:
+        # Default: moderate (between B and C)
+        category = 'C'
 
-    # Default: moderate (between B and C)
-    return 'C'
+    # Apply restaurant-based floor: if the restaurant is a known fast food/
+    # pizza/dessert chain, the dish can't be rated better than the floor.
+    if restaurant_lower:
+        for restaurant_key, floor_cat in _RESTAURANT_CATEGORY_FLOORS.items():
+            if restaurant_key in restaurant_lower:
+                if _CATEGORY_ORDER[category] < _CATEGORY_ORDER[floor_cat]:
+                    category = floor_cat
+                break
+
+    return category
 
 
 def compute_health_index(
@@ -176,7 +219,8 @@ def compute_health_index(
     for dish in dishes_with_frequency:
         name = dish.get("name", "")
         count = dish.get("count", 1)
-        category = _classify_dish(name)
+        restaurant = dish.get("restaurant", "")
+        category = _classify_dish(name, restaurant)
         raw_score = _CATEGORY_RAW_SCORES[category]
 
         total_weighted_score += raw_score * count
@@ -410,8 +454,10 @@ Return ONLY valid JSON, no other text."""
             name = dish.get("name", "Unknown")
             count = dish.get("count", 0)
             calories = dish.get("calories", 0)
-            category = _classify_dish(name)
-            lines.append(f"- {name}: ordered {count}x, ~{calories:.0f} kcal each [Cat {category}]")
+            restaurant = dish.get("restaurant", "")
+            category = _classify_dish(name, restaurant)
+            rest_info = f" from {restaurant}" if restaurant else ""
+            lines.append(f"- {name}{rest_info}: ordered {count}x, ~{calories:.0f} kcal each [Cat {category}]")
 
         return "\n".join(lines) if lines else "No dish data available"
 
@@ -461,8 +507,9 @@ Return ONLY valid JSON, no other text."""
             # Dish category adjustment (per-day)
             for order in orders:
                 dishes = order.get("dishes", [])
+                restaurant = order.get("restaurant", "")
                 for dish_name in dishes:
-                    cat = _classify_dish(dish_name)
+                    cat = _classify_dish(dish_name, restaurant)
                     if cat == 'D':
                         adjustment -= 5
                         break

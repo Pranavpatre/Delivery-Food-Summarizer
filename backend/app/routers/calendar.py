@@ -167,6 +167,7 @@ async def get_summary(
     months_data = []
     dish_counts = defaultdict(int)  # Track dish frequency
     dish_calories = {}  # Track calories per dish
+    dish_restaurants = defaultdict(lambda: defaultdict(int))  # Track restaurant per dish
     all_orders = []  # Collect all orders for health analysis
     daily_orders = defaultdict(list)  # Track orders by date for daily health scores
     late_night_count = 0  # Orders after 10pm or before 5am
@@ -205,7 +206,8 @@ async def get_summary(
             daily_orders[date_str].append({
                 "calories": order.total_calories or 0,
                 "dishes": [d.name for d in order.dishes],
-                "hour": order_hour
+                "hour": order_hour,
+                "restaurant": order.restaurant_name or ""
             })
             # Track late night orders (after 10pm or before 5am)
             # Skip orders with exactly midnight time (00:00:00) - means time wasn't parsed
@@ -220,6 +222,8 @@ async def get_summary(
                 dish_counts[dish_name] += dish.quantity
                 if dish_name not in dish_calories and dish.calories:
                     dish_calories[dish_name] = dish.calories
+                if order.restaurant_name:
+                    dish_restaurants[dish_name][order.restaurant_name] += dish.quantity
 
         # Count unique days with orders
         days_ordered = len(set(o.order_date.day for o in orders))
@@ -313,7 +317,8 @@ async def get_summary(
                 {
                     "name": name.title(),
                     "count": count,
-                    "calories": dish_calories.get(name, 0)
+                    "calories": dish_calories.get(name, 0),
+                    "restaurant": max(dish_restaurants.get(name, {}).items(), key=lambda x: x[1], default=("", 0))[0]
                 }
                 for name, count in dish_counts.items()
             ]

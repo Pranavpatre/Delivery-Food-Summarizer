@@ -16,6 +16,16 @@ from ..models import User, TokenResponse
 router = APIRouter()
 settings = get_settings()
 
+
+def check_email_allowed(email: str):
+    """Block sign-in if email is not on the beta allowlist."""
+    if not settings.allowed_emails:
+        return  # No allowlist configured — allow everyone
+    allowed = [e.strip().lower() for e in settings.allowed_emails.split(",") if e.strip()]
+    if email.lower() not in allowed:
+        raise HTTPException(status_code=403, detail="You're not on the beta access list. Contact the team to request access.")
+
+
 # Google OAuth URLs
 GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth"
 GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -86,6 +96,9 @@ async def mobile_google_auth(auth_request: MobileAuthRequest, db: Session = Depe
         # Verify email is verified by Google
         if not idinfo.get("email_verified"):
             raise HTTPException(status_code=400, detail="Email not verified by Google")
+
+        # Beta access check
+        check_email_allowed(email)
 
         # Create or update user
         user = db.query(User).filter(User.email == email).first()
@@ -190,6 +203,9 @@ async def google_callback(code: str, db: Session = Depends(get_db)):
             email = userinfo.get("email")
             if not email:
                 raise HTTPException(status_code=400, detail="Could not get email from Google")
+
+        # Beta access check
+        check_email_allowed(email)
 
         # Create or update user
         user = db.query(User).filter(User.email == email).first()

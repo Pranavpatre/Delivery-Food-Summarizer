@@ -32,6 +32,9 @@ class Settings(BaseSettings):
     swiggy_sender: str = "noreply@swiggy.in"
     lookback_months: int = 6  # Number of months to look back for data
 
+    # Beta access control — comma-separated emails, empty = allow all
+    allowed_emails: str = ""
+
     @property
     def date_filter_start(self) -> str:
         """Calculate the start date dynamically based on lookback_months."""

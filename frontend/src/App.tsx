@@ -7,6 +7,8 @@ import LoginPage from './components/LoginPage';
 import SummaryPage from './components/SummaryPage';
 import CalendarPage from './components/CalendarPage';
 import AdminPage from './components/AdminPage';
+import PrivacyPage from './components/PrivacyPage';
+import TermsPage from './components/TermsPage';
 
 interface AuthContextType {
   user: User | null;
@@ -91,9 +93,15 @@ function App() {
   }
 
   const renderPage = () => {
-    // Check for admin page (accessible without auth)
+    // Public pages (accessible without auth)
     if (window.location.pathname === '/admin') {
       return <AdminPage />;
+    }
+    if (window.location.pathname === '/privacy') {
+      return <PrivacyPage />;
+    }
+    if (window.location.pathname === '/terms') {
+      return <TermsPage />;
     }
 
     if (!user) {
